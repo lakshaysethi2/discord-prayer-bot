@@ -241,9 +241,6 @@ async def adhoc_play_by_id(
         "prayer_type": prayer_type.value,
     })
     return JSONResponse({"ok": True, "msg": "Queued"})
-        "prayer_type": prayer_type,
-    })
-    return HTMLResponse(f"Queued: {prayer_type} prayer will play in a few seconds")
 
 
 # ------------------------------------------------------------------ public
