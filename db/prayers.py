@@ -35,7 +35,7 @@ def create_prayer_schedules_table(db: Database) -> None:
 
 
 def get_weekly_schedule(db: Database, guild_id: str) -> List[PrayerSchedule]:
-    rows = db.query_all("""
+    rows = db.fetchall("""
         SELECT id, guild_id, day_of_week, prayer_type, time, enabled, created_at
         FROM prayer_schedules
         WHERE guild_id = ?
@@ -62,7 +62,7 @@ def upsert_schedule(db: Database, guild_id: str, day: int, prayer_type: PrayerTy
         ON CONFLICT(guild_id, day_of_week, prayer_type, time) DO UPDATE SET
             enabled = excluded.enabled
     """, (guild_id, day, prayer_type.value, t.isoformat(), int(enabled)))
-    row = db.query_one("SELECT id FROM prayer_schedules WHERE guild_id=? AND day_of_week=? AND prayer_type=? AND time=?",
+    row = db.fetchone("SELECT id FROM prayer_schedules WHERE guild_id=? AND day_of_week=? AND prayer_type=? AND time=?",
                        (guild_id, day, prayer_type.value, t.isoformat()))
     return row["id"] if row else -1
 
