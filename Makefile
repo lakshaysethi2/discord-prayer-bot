@@ -62,12 +62,12 @@ health:
 	@$(COMPOSE) ps --format 'table {{.Service}}\t{{.Status}}'
 
 # ================================================================= tests
-# Copy test patterns from `discord-radio`: pytest + coverage + lint/format.
-test: env build
-	python -m pytest -q
+# Run tests inside Docker container (matches production environment)
+test: env
+	$(COMPOSE) run --rm bot python -m pytest -q
 
-test-cov: env build
-	python -m coverage run -m pytest -q && python -m coverage report
+test-cov: env
+	$(COMPOSE) run --rm bot python -m coverage run -m pytest -q && python -m coverage report
 
 lint: env build
 	python -m ruff check . || echo "ruff not installed — install with: pip install ruff"

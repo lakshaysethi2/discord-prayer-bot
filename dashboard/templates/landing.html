@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Discord Prayer Bot</title>
+    <style>
+        body { font-family: sans-serif; margin: 0; background: #f0f4f8; color: #333; }
+        .hero { background: #2c3e50; color: #fff; padding: 60px 20px; text-align: center; }
+        .hero h1 { font-size: 2.5em; margin: 0; }
+        .hero p { font-size: 1.2em; opacity: 0.9; margin: 10px 0 0; }
+        .container { max-width: 800px; margin: 0 auto; padding: 40px 20px; }
+        .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px; }
+        .card { background: #fff; border-radius: 8px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); text-decoration: none; color: #333; transition: transform 0.15s; }
+        .card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+        .card h3 { margin: 0 0 8px; color: #2c3e50; }
+        .card p { margin: 0; font-size: 14px; color: #666; }
+        .card .icon { font-size: 2em; margin-bottom: 8px; }
+        .status { margin-top: 30px; padding: 16px; background: #fff; border-radius: 8px; text-align: center; }
+        .status-on { color: #27ae60; font-weight: bold; }
+    </style>
+</head>
+<body>
+<div class="hero">
+    <h1>🕌 Discord Prayer Bot</h1>
+    <p>Schedule & recite prayers from 6 traditions in your Discord server</p>
+</div>
+
+<div class="container">
+    <div class="cards">
+        <a href="/servers" class="card">
+            <div class="icon">⚙️</div>
+            <h3>Server Settings</h3>
+            <p>Enable bot, select voice & text channels, configure timezone</p>
+        </a>
+        <a href="/prayers/1389131646758031410" class="card">
+            <div class="icon">📅</div>
+            <h3>Schedule Prayers</h3>
+            <p>Set weekly prayer times for each tradition (admin login required)</p>
+        </a>
+        {% if request.cookies.get('prayer_session') %}
+        <a href="/prayers/1389131646758031410" class="card">
+            <div class="icon">▶️</div>
+            <h3>Ad-Hoc Recite</h3>
+            <p>Click "Play Now" to immediately recite any prayer in voice</p>
+        </a>
+        {% endif %}
+        <a href="/prayers/public/1389131646758031410" class="card">
+            <div class="icon">👁️</div>
+            <h3>Public Schedule</h3>
+            <p>View this week's prayer times (no login required)</p>
+        </a>
+    </div>
+
+    <div class="status">
+        <p>Bot status: <span class="status-on">● Online</span> | 6 traditions available | Auto-joins voice at prayer times</p>
+        <p style="font-size:12px;color:#999;">Traditions: Buddhist · Christian · Jewish · Sufi · Vedantic · Three Daily Prayers</p>
+    </div>
+</div>
+</body>
+</html>

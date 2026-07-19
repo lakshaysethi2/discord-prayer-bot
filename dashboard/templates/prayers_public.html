@@ -8,53 +8,61 @@
         table { width: 100%; border-collapse: collapse; background: #fff; margin-top: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
         th, td { padding: 12px 16px; border-bottom: 1px solid #ddd; text-align: left; }
         th { background: #2c3e50; color: #fff; }
-        .timezone-note { font-style: italic; color: #666; margin-top: 10px; }
+        .tz-info { background: #e8f4f8; padding: 10px 16px; border-radius: 6px; margin-bottom: 16px; }
+        .utc-time { color: #999; font-size: 12px; }
     </style>
 </head>
 <body>
-<h1>Prayer Schedule (Guild: {{ guild_id }})</h1>
-<p class="timezone-note">Times shown below are in <strong>UTC</strong> (base storage). Guild timezone offset: <strong>{{ timezone_display }}</strong>. Per-guild offset converts to local time.</p>
+<h1>🕌 Prayer Schedule</h1>
+
+<div class="tz-info">
+    🕐 Times shown in your local timezone: <strong id="tz-name">detecting...</strong>
+    (<span id="tz-offset">...</span>)
+    <br><small>All times are stored in UTC on the server.</small>
+</div>
 
 <table>
     <tr>
-        <th>Day of Week</th>
-        <th>Prayer Type</th>
+        <th>Day</th>
+        <th>Prayer</th>
         <th>Scheduled Time</th>
         <th>Status</th>
     </tr>
     {% for row in rows %}
-    <tr>
+    <tr class="prayer-row" data-utc-time="{{ row.schedule.time_utc }}">
         <td>
             {% set days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] %}
             {{ days[row.schedule.day_of_week] }}
         </td>
         <td>{{ row.schedule.prayer_type.value | title }}</td>
         <td>
-            <strong>Local:</strong> {{ row.local_time }}<br>
-            <small>UTC: {{ row.schedule.time_utc }}</small>
+            <span class="local-time">--:--</span>
+            <br><small class="utc-time">UTC: {{ row.schedule.time_utc }}</small>
         </td>
-        <td>{% if row.schedule.enabled %}Active{% else %}Disabled{% endif %}</td>
+        <td>{% if row.schedule.enabled %}✅ Active{% else %}⏸️ Disabled{% endif %}</td>
     </tr>
     {% endfor %}
 </table>
 
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    document.getElementById('user-tz').textContent = tz;
-    document.querySelectorAll('.prayer-time').forEach(function(el) {
-        const timeStr = el.getAttribute('data-time');
-        if (!timeStr) return;
-        const [h, m] = timeStr.split(':').map(Number);
-        const now = new Date();
-        // Build in user's local time to avoid UTC/day-shift issues
-        const d = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate(), h, m));
-        // Convert UTC time to local display
-        const localH = d.getHours();
-        const localM = d.getMinutes();
-        const display = new Date(now.getFullYear(), now.getMonth(), now.getDate(), localH, localM);
-        el.textContent = display.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZone: tz });
-    });
+// --- Timezone detection ---
+const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+const now = new Date();
+const offsetMinutes = -now.getTimezoneOffset();
+const offsetHours = offsetMinutes / 60;
+const offsetStr = (offsetHours >= 0 ? '+' : '') + offsetHours.toFixed(1) + 'h';
+document.getElementById('tz-name').textContent = tz;
+document.getElementById('tz-offset').textContent = 'UTC' + offsetStr;
+
+// --- Convert UTC times to local ---
+document.querySelectorAll('.prayer-row').forEach(function(row) {
+    const utcTime = row.dataset.utcTime;
+    if (!utcTime) return;
+    const [h, m] = utcTime.split(':').map(Number);
+    const utcDate = new Date(Date.UTC(2024, 0, 1, h, m));
+    const localH = String(utcDate.getHours()).padStart(2, '0');
+    const localM = String(utcDate.getMinutes()).padStart(2, '0');
+    row.querySelector('.local-time').textContent = localH + ':' + localM;
 });
 </script>
 </body>

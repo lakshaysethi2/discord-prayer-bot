@@ -14,7 +14,7 @@ from collections import defaultdict
 from typing import Callable, Awaitable
 
 from db.database import Database
-from db.prayers import get_guild_config, apply_guild_config
+from db.guilds import get_guild_config, apply_guild_config
 
 log = logging.getLogger(__name__)
 

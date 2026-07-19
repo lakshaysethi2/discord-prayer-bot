@@ -4,44 +4,164 @@
     <title>Prayer Schedule - Admin</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.css">
     <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.js"></script>
+    <style>
+        body { font-family: sans-serif; margin: 20px; background: #f9f9f9; color: #333; }
+        h1, h2 { color: #2c3e50; }
+        table { width: 100%; border-collapse: collapse; background: #fff; margin: 16px 0; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        th, td { padding: 8px 12px; border-bottom: 1px solid #ddd; text-align: center; }
+        th { background: #2c3e50; color: #fff; }
+        input[type="time"] { padding: 4px; border: 1px solid #ccc; border-radius: 3px; width: 100px; }
+        button, .btn { background: #2c3e50; color: #fff; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; margin: 4px; font-size: 13px; }
+        button:hover { background: #34495e; }
+        .btn-play { background: #27ae60; font-size: 11px; padding: 4px 8px; }
+        .btn-play:hover { background: #2ecc71; }
+        .prayer-row:nth-child(even) { background: #f5f5f5; }
+        .flash { background: #d4edda; padding: 10px; border-radius: 4px; margin-bottom: 12px; }
+        .tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+        .tab { padding: 8px 16px; background: #ddd; border-radius: 4px; cursor: pointer; text-decoration: none; color: #333; }
+        .tab.active { background: #2c3e50; color: #fff; }
+        #calendar { max-width: 900px; margin: 20px auto; }
+        .tz-info { background: #e8f4f8; padding: 10px 16px; border-radius: 6px; margin-bottom: 16px; font-size: 14px; }
+        .utc-time { color: #999; font-size: 11px; }
+        .local-label { color: #2c3e50; font-weight: 600; }
+    </style>
 </head>
 <body>
-<h1>Prayer Schedule (Guild: {{ guild_id }})</h1>
-<p><strong>Timezone rules:</strong> {{ timezone_note }}. Per-guild offset: <strong>{{ '%+.1f'|format(timezone_offset_hours) }}h</strong>. Admin changes apply live within 30s via <code>dashboard_commands</code> / <code>apply_server_config</code>.</p>
+<h1>🙏 Prayer Schedule — {{ guild_id }}</h1>
 
-<form method="post" action="/prayers/save">
+{% if request.query_params.get('flash') %}
+<div class="flash">{{ request.query_params.get('flash') }}</div>
+{% endif %}
+
+<div class="tabs">
+    <a href="/servers" class="tab">⚙️ Server Settings</a>
+    <span class="tab active">📅 Schedule</span>
+    <a href="/prayers/public/{{ guild_id }}" class="tab">👁️ Public View</a>
+</div>
+
+<div class="tz-info">
+    🕐 Your browser timezone: <strong id="tz-name">detecting...</strong>
+    (offset: <strong id="tz-offset">...</strong>)
+    <br>Times you enter below are in <span class="local-label">your local time</span> and auto-converted to UTC on save.
+    <br>UTC equivalents are shown alongside for reference.
+</div>
+
+<form method="post" action="/prayers/save" id="schedule-form">
     <input type="hidden" name="guild_id" value="{{ guild_id }}">
     <table>
         <tr>
             <th>Day</th>
             <th>Prayer</th>
-            <th>Time (HH:MM)</th>
+            <th>Time (your local)</th>
+            <th>≡ UTC</th>
             <th>Enabled</th>
+            <th>Ad-Hoc</th>
         </tr>
         {% for sched in schedules %}
-        <tr>
-            <td>{{ sched.day_of_week }}</td>
-            <td>{{ sched.prayer_type }}</td>
-            <td><input type="time" name="time_{{ sched.id }}" value="{{ sched.time }}"></td>
+        <tr class="prayer-row" data-utc-time="{{ sched.time_utc }}">
+            <td>
+                {% set days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] %}
+                {{ days[sched.day_of_week] }}
+            </td>
+            <td>{{ sched.prayer_type.value | title }}</td>
+            <td>
+                <input type="time" name="time_{{ sched.id }}" class="local-time-input"
+                       value="{{ sched.time_utc }}" data-sched-id="{{ sched.id }}"
+                       onchange="updateUtcDisplay(this)">
+            </td>
+            <td><span class="utc-time" id="utc-display-{{ sched.id }}">{{ sched.time_utc }}</span></td>
             <td><input type="checkbox" name="enabled_{{ sched.id }}" {% if sched.enabled %}checked{% endif %}></td>
+            <td>
+                <button type="button" class="btn-play" onclick="playNow('{{ sched.prayer_type.value }}', '{{ get_audio_filename(sched.prayer_type) }}')">▶ Play Now</button>
+            </td>
         </tr>
         {% endfor %}
     </table>
-    <button type="submit">Save Schedule</button>
+    <button type="submit">💾 Save Schedule</button>
 </form>
 
-<h2>Calendar View</h2>
-<div id="calendar"></div>
-
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-  var calendarEl = document.getElementById('calendar');
-  var calendar = new FullCalendar.Calendar(calendarEl, {
-    initialView: 'dayGridMonth',
-    events: {{ calendar_events|tojson }}
-  });
-  calendar.render();
+// --- Timezone detection ---
+const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+const now = new Date();
+const offsetMinutes = -now.getTimezoneOffset(); // positive = ahead of UTC
+const offsetHours = offsetMinutes / 60;
+const offsetStr = (offsetHours >= 0 ? '+' : '') + offsetHours.toFixed(1) + 'h';
+
+document.getElementById('tz-name').textContent = tz;
+document.getElementById('tz-offset').textContent = 'UTC' + offsetStr;
+
+// --- Convert input time from local to UTC before submit ---
+document.getElementById('schedule-form').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const inputs = document.querySelectorAll('.local-time-input');
+    inputs.forEach(function(input) {
+        if (input.value) {
+            // Parse HH:MM as local time, convert to UTC
+            const [h, m] = input.value.split(':').map(Number);
+            const localDate = new Date();
+            localDate.setHours(h, m, 0, 0);
+            // Get UTC hours/minutes
+            const utcH = String(localDate.getUTCHours()).padStart(2, '0');
+            const utcM = String(localDate.getUTCMinutes()).padStart(2, '0');
+            // Store UTC value back
+            input.value = utcH + ':' + utcM;
+        }
+    });
+    this.submit();
 });
+
+// --- Update UTC display when user changes local time ---
+function updateUtcDisplay(input) {
+    if (!input.value) return;
+    const [h, m] = input.value.split(':').map(Number);
+    const localDate = new Date();
+    localDate.setHours(h, m, 0, 0);
+    const utcH = String(localDate.getUTCHours()).padStart(2, '0');
+    const utcM = String(localDate.getUTCMinutes()).padStart(2, '0');
+    const sid = input.dataset.schedId;
+    const display = document.getElementById('utc-display-' + sid);
+    if (display) display.textContent = utcH + ':' + utcM;
+}
+
+// --- Initialize: convert UTC times from server to local for display ---
+(function() {
+    const rows = document.querySelectorAll('.prayer-row');
+    rows.forEach(function(row) {
+        const utcTime = row.dataset.utcTime;
+        if (!utcTime) return;
+        const [h, m] = utcTime.split(':').map(Number);
+        // Create a UTC date and get local time
+        const utcDate = new Date(Date.UTC(2024, 0, 1, h, m));
+        const localH = String(utcDate.getHours()).padStart(2, '0');
+        const localM = String(utcDate.getMinutes()).padStart(2, '0');
+        const input = row.querySelector('.local-time-input');
+        if (input && input.value === utcTime) {
+            input.value = localH + ':' + localM;
+        }
+        // Update UTC display
+        const sid = input ? input.dataset.schedId : null;
+        if (sid) {
+            const display = document.getElementById('utc-display-' + sid);
+            if (display) display.textContent = utcTime;
+        }
+    });
+})();
+
+// --- Ad-hoc play ---
+async function playNow(prayerType, filename) {
+    const resp = await fetch('/prayers/adhoc', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: new URLSearchParams({
+            guild_id: '{{ guild_id }}',
+            prayer_type: prayerType,
+            filename: filename
+        })
+    });
+    const result = await resp.text();
+    alert(result);
+}
 </script>
 </body>
 </html>
