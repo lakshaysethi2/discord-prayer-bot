@@ -13,7 +13,9 @@
 <div class="rounded-xl bg-gradient-to-r from-indigo-900/60 to-purple-900/60 border border-indigo-700/50 p-5 mb-6 text-center">
   <div class="text-xs text-indigo-300 uppercase tracking-wider mb-1">Next Prayer</div>
   <div class="text-2xl mb-1">{{ emojis.get(next_prayer.prayer_type, "🕌") }} {{ labels.get(next_prayer.prayer_type, next_prayer.prayer_type | title) }}</div>
-  <div class="text-sm text-slate-300">{{ next_prayer.day_name }} · <span class="local-time-next" data-utc="{{ next_prayer.time_utc }}">--:--</span> UTC</div>
+  <div class="text-sm text-slate-300">
+    <span class="local-time-next" data-iso="{{ next_prayer.utc_iso }}"></span>
+  </div>
   <div class="text-xs text-slate-500 mt-1">{{ next_prayer.dt }}</div>
   <div class="mt-2 inline-block rounded-full bg-indigo-800/60 px-4 py-1 text-sm font-medium text-indigo-200">
     in {% if next_prayer.in_hours > 0 %}{{ next_prayer.in_hours }}h {% endif %}{{ next_prayer.in_minutes }}m
@@ -81,7 +83,12 @@ document.querySelectorAll('[data-utc-time]').forEach(card => {
 
 const nextEl = document.querySelector('.local-time-next');
 if (nextEl) {
-    nextEl.textContent = utcToLocal(nextEl.dataset.utc);
+    const d = new Date(nextEl.dataset.iso + 'Z');
+    const localTime = d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+    const localDay = d.toLocaleDateString([], {weekday: 'long'});
+    const localDate = d.toLocaleDateString([], {day: 'numeric', month: 'short'});
+    const tzName = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    nextEl.innerHTML = localTime + ' · ' + localDay + ' ' + localDate + ' <span class="text-slate-500">' + tzName + '</span>';
 }
 </script>
 {% endblock %}

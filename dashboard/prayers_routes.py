@@ -299,6 +299,7 @@ async def prayers_public(
                 "day_name": days_list[best_sched.day_of_week],
                 "time_utc": best_sched.time_utc,
                 "dt": best_dt.strftime("%a %d %b %Y"),
+                "utc_iso": best_dt.isoformat(),
                 "in_hours": hours,
                 "in_minutes": minutes,
             }
