@@ -5,6 +5,9 @@ All notable changes to the Discord Prayer Bot.
 ## [Unreleased]
 
 ### Added
+- Guild name display on schedule and public pages (instead of raw ID)
+- Guild dropdown selector on schedule and public pages for multi-guild
+- `/servers` now the guild hub with per-guild "Schedule" and "Public View" links
 - Landing page at `/` with navigation cards
 - Ad-hoc prayer recitation via "Play Now" button
 - Browser timezone auto-detection on admin & public pages
