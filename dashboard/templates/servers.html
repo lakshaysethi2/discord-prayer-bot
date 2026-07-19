@@ -73,6 +73,30 @@
 <p>No servers discovered yet. Invite the bot to a Discord server to see it here.</p>
 {% endif %}
 
+{% if servers %}
+<div class="server-card">
+    <h2>🎛️ Playback Controls</h2>
+    <p>Current volume: <strong>{{ current_volume }}%</strong></p>
+    <form method="post" action="/controls/volume" style="display:inline;">
+        <input type="hidden" name="guild_id" value="{{ servers[0].guild_id }}">
+        <input type="range" name="volume_percent" min="50" max="250" value="{{ current_volume }}"
+               oninput="this.nextElementSibling.textContent=this.value+'%'" style="width:200px;">
+        <span>{{ current_volume }}%</span>
+        <button type="submit">Set Volume</button>
+    </form>
+    <p style="margin-top:12px;">
+    {% for s in servers %}
+    <form method="post" action="/controls" style="display:inline;">
+        <input type="hidden" name="guild_id" value="{{ s.guild_id }}">
+        <button type="submit" name="action" value="skip">⏭ Skip</button>
+        <button type="submit" name="action" value="pause">⏸ Pause</button>
+        <button type="submit" name="action" value="resume">▶ Resume</button>
+    </form>
+    {% endfor %}
+    </p>
+</div>
+{% endif %}
+
 <p><small>Live apply uses <code>apply_server_config</code> from <code>discord-radio</code> framework.</small></p>
 </body>
 </html>

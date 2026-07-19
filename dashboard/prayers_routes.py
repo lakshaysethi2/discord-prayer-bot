@@ -220,6 +220,7 @@ async def servers_page(
     db: Database = Depends(get_db),
 ):
     from db.prayers import get_guild_config, get_guild_channels
+    from dashboard.commands import recent
     # Show all guilds from guild_configs (auto-discovered)
     guild_rows = db.fetchall("SELECT guild_id, guild_name FROM guild_configs ORDER BY guild_id")
     servers = []
@@ -238,12 +239,14 @@ async def servers_page(
             "voice_channels": voice_channels,
             "text_channels": text_channels,
         })
+    # Current volume from bot_state
+    current_volume = db.get_state_int("stream_volume_percent", 100)
     return templates.TemplateResponse(
         request,
         "servers.html",
         {
             "servers": servers,
-            "user": None,
+            "current_volume": current_volume,
         },
     )
 
@@ -271,3 +274,44 @@ async def servers_update(
     from dashboard.commands import enqueue
     enqueue(db, command="apply_server", requested_by="admin", payload={"guild_id": guild_id})
     return RedirectResponse(f"/servers?flash=Updated+{guild_id}", status_code=303)
+
+
+# ------------------------------------------------------------------ controls
+@router.post("/controls")
+async def controls(
+    request: Request,
+    guild_id: str = Form(...),
+    action: str = Form(...),
+    db: Database = Depends(get_db),
+):
+    require_auth(request)
+    from dashboard.commands import enqueue
+
+    if action == "skip":
+        enqueue(db, command="skip", requested_by="admin", payload={"guild_id": guild_id})
+        return RedirectResponse(f"/servers?flash=Queued+skip", status_code=303)
+    elif action == "pause":
+        enqueue(db, command="pause", requested_by="admin", payload={"guild_id": guild_id})
+        return RedirectResponse(f"/servers?flash=Queued+pause", status_code=303)
+    elif action == "resume":
+        enqueue(db, command="resume", requested_by="admin", payload={"guild_id": guild_id})
+        return RedirectResponse(f"/servers?flash=Queued+resume", status_code=303)
+    else:
+        return RedirectResponse(f"/servers?flash=Unknown+action", status_code=303)
+
+
+@router.post("/controls/volume")
+async def set_volume(
+    request: Request,
+    guild_id: str = Form(...),
+    volume_percent: int = Form(...),
+    db: Database = Depends(get_db),
+):
+    require_auth(request)
+    from dashboard.commands import enqueue
+    vol = min(250, max(50, int(volume_percent)))
+    enqueue(db, command="set_volume", requested_by="admin", payload={
+        "guild_id": guild_id,
+        "volume_percent": vol,
+    })
+    return RedirectResponse(f"/servers?flash=Queued+volume+{vol}%25", status_code=303)

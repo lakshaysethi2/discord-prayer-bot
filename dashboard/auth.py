@@ -40,4 +40,4 @@ def verify_token(request: Request) -> bool:
 
 def require_auth(request: Request) -> None:
     if not verify_token(request):
-        raise HTTPException(status_code=403, detail="Authentication required — set ADMIN_TOKEN or include Bearer token")
+        raise HTTPException(status_code=303, headers={"Location": "/login"})
