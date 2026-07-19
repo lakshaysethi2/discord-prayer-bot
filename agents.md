@@ -14,6 +14,7 @@
 ## Agent Rules
 
 - **Update CHANGELOG.md before every `git commit` and `git push`.** All agents must add entries to the [Unreleased] section summarizing changes made in the current session.
+- **Read and maintain `USER_REQUIREMENTS.md`.** Agents must read this file at the start of every session to understand requirements and prevent regressions. When a new requirement is introduced, update the file with the requirement and its acceptance criteria. When a requirement changes or a conflict arises, question the user — do not silently override existing requirements.
 
 ## Bot Components
 

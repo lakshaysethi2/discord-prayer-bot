@@ -20,12 +20,13 @@ A Discord bot that plays scheduled prayer audio (6 traditions: Buddhist, Christi
 
 ### FR-3: Admin Dashboard
 - Web dashboard at `http://<host>:8700`
+- Cloudflare Tunnel: `https://prayer-bot-dnd.lak.nz`
 - Guild selector with server names (not raw IDs)
-- Weekly schedule editor (42 slots: 6 prayers × 7 days)
+- Weekly schedule editor (42 slots: 6 prayers × 7 days) with FullCalendar view
 - Ad-hoc "Play Now" button for instant recitation
-- Volume slider + skip/pause/resume controls
-- Cookie-based auth via `/login`
-- Server management with auto-discovered channel dropdowns
+- Volume slider (50%–450%) with JS fetch for instant UI update
+- Skip/pause/resume per guild (AJAX controls, no page reload)
+- Tailwind CSS dark theme (matching discord-radio style)
 
 ### FR-4: Multi-Guild Support
 - Each Discord guild has independent schedule, voice/text channels
