@@ -168,7 +168,16 @@ class PrayerBot(discord.Client):
             return existing
 
         try:
-            vc = await voice_channel.connect()
+            for attempt in range(1, 4):
+                try:
+                    vc = await voice_channel.connect(reconnect=True, timeout=30.0)
+                    break
+                except Exception as exc:
+                    log.warning("Voice connect attempt %d/3 failed for guild %s: %s", attempt, guild_id, exc)
+                    if attempt == 3:
+                        raise
+            else:
+                return None
             self.voice_connections[guild_id] = vc
             log.info("Joined voice in guild %s for prayer", guild_id)
             return vc
