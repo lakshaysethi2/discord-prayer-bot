@@ -152,52 +152,40 @@ class PrayerBot(discord.Client):
         """Join the configured voice channel if not already connected. Returns the VC."""
         cfg = get_guild_config(self.db, guild_id)
         if cfg is None or not cfg.voice_channel_id:
-            log.warning("_ensure_voice_connected: no config or voice_channel_id for guild %s", guild_id)
             return None
 
-        log.info("_ensure_voice_connected: guild=%s voice_channel_id=%s", guild_id, cfg.voice_channel_id)
         guild = self.get_guild(int(guild_id))
         if guild is None:
-            log.warning("_ensure_voice_connected: guild %s not found in cache", guild_id)
             return None
 
-        log.info("_ensure_voice_connected: guild=%s found, name=%s", guild_id, guild.name)
         voice_channel = guild.get_channel(int(cfg.voice_channel_id))
         if voice_channel is None:
-            log.warning("_ensure_voice_connected: voice channel %s not found in guild %s cache", cfg.voice_channel_id, guild_id)
+            log.warning("Voice channel %s not found", cfg.voice_channel_id)
             return None
-
-        log.info("_ensure_voice_connected: voice_channel=%s name=%s type=%s", voice_channel.id, voice_channel.name, type(voice_channel).__name__)
 
         existing = self.voice_connections.get(guild_id)
         if existing and existing.is_connected():
-            log.info("_ensure_voice_connected: already connected in guild %s, channel=%s", guild_id, existing.channel.id if existing.channel else "?")
             if existing.channel and str(existing.channel.id) == str(cfg.voice_channel_id):
                 return existing
-            log.info("_ensure_voice_connected: moving to new channel %s", cfg.voice_channel_id)
             await existing.move_to(voice_channel)
             return existing
 
         try:
-            log.info("_ensure_voice_connected: connecting to voice channel %s in guild %s...", voice_channel.id, guild_id)
             for attempt in range(1, 4):
                 try:
-                    log.info("_ensure_voice_connected: attempt %d/3...", attempt)
                     vc = await voice_channel.connect(reconnect=True, timeout=30.0)
-                    log.info("_ensure_voice_connected: connected! vc=%s", vc)
                     break
                 except Exception as exc:
-                    log.warning("_ensure_voice_connected: attempt %d/3 failed: %s", attempt, exc)
+                    log.warning("Voice connect attempt %d/3 failed for guild %s: %s", attempt, guild_id, exc)
                     if attempt == 3:
                         raise
             else:
-                log.error("_ensure_voice_connected: all 3 attempts failed")
                 return None
             self.voice_connections[guild_id] = vc
-            log.info("_ensure_voice_connected: saved vc, guild=%s joined voice", guild_id)
+            log.info("Joined voice in guild %s for prayer", guild_id)
             return vc
         except Exception as exc:
-            log.exception("_ensure_voice_connected: failed to join voice in guild %s", guild_id)
+            log.exception("Failed to join voice in guild %s: %s", guild_id, exc)
             return None
 
     async def _disconnect_voice_after_delay(self, guild_id: str, delay_seconds: int = 300) -> None:
@@ -287,12 +275,6 @@ class PrayerBot(discord.Client):
         return True
 
     # ------------------------------------------------------------------ voice state tracking
-
-    async def on_socket_response(self, msg: dict) -> None:
-        if msg.get("t") == "VOICE_SERVER_UPDATE":
-            d = msg.get("d", {})
-            log.info("VOICE_SERVER_UPDATE: guild=%s endpoint=%s token_len=%s",
-                     d.get("guild_id"), d.get("endpoint"), len(d.get("token", "") or ""))
 
     async def on_voice_state_update(self, member, before, after) -> None:
         """Auto-pause when last user leaves; auto-resume when first joins."""
