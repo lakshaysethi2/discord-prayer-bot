@@ -17,6 +17,14 @@ make down    # Stop services
 make logs    # View logs
 ```
 
+## Agents & Deliverables
+- `agents/pm_agent.md` — Requirements, user stories, timezone rules.
+- `agents/qa_agent.md` — Test plan (scheduler, dashboard, mock playback, live apply).
+- `agents/devops_agent.md` — Docker, healthchecks, CI updates.
+- `agents/security_agent.md` — Auth middleware spec, env audit checklist.
+- `agents/content_agent.md` — Media inventory (`media/prayers/`), `.gitattributes`, download script.
+- `docs/user_stories.md` — Acceptance criteria for admin schedule, playback, public view, live config apply, multi-guild, timezone.
+
 ## Files Added / Updated for PR Readiness
 - `plan.md`
 - `agents.md`
