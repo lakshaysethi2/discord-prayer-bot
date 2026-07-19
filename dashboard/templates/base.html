@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Prayer Bot{% endblock %}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    input[type="range"] { accent-color: #6366f1; }
+    select { background-image: none; }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen font-sans">
+  <header class="border-b border-slate-800 bg-slate-900/60">
+    <nav class="max-w-4xl mx-auto px-4 py-3 flex items-center gap-4 text-sm">
+      <a href="/" class="font-semibold text-slate-100 hover:text-white">🕌 Prayer Bot</a>
+      <a href="/servers" class="text-slate-300 hover:text-white">Servers</a>
+      <div class="grow"></div>
+      {% if request.cookies.get('prayer_session') %}
+        <a href="/servers" class="text-slate-300 hover:text-white">Dashboard</a>
+      {% else %}
+        <a href="/login" class="text-slate-300 hover:text-white">Login</a>
+      {% endif %}
+    </nav>
+  </header>
+  <main class="max-w-4xl mx-auto px-4 py-6">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

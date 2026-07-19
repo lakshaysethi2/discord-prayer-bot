@@ -1,119 +1,152 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Servers — Multi-Guild</title>
-    <style>
-        body { font-family: sans-serif; margin: 40px; background: #f9f9f9; color: #333; }
-        h1 { color: #2c3e50; }
-        table { width: 100%; border-collapse: collapse; background: #fff; margin-top: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-        th, td { padding: 12px 16px; border-bottom: 1px solid #ddd; text-align: left; }
-        th { background: #2c3e50; color: #fff; }
-        .timezone-note { font-style: italic; color: #666; margin-top: 10px; }
-        .badge { padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: bold; text-transform: uppercase; }
-        .badge-on { background: #27ae60; color: #fff; }
-        .badge-off { background: #e74c3c; color: #fff; }
-        .server-card { background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 20px; margin-bottom: 20px; }
-        .server-card h2 { margin-top: 0; color: #2c3e50; }
-        label { display: block; margin: 8px 0 4px; font-weight: 600; }
-        select, input { width: 100%; padding: 8px; margin-bottom: 8px; border: 1px solid #ccc; border-radius: 4px; }
-        button { background: #2c3e50; color: #fff; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-size: 14px; }
-        button:hover { background: #34495e; }
-        .flash { background: #d4edda; color: #155724; padding: 8px 16px; border-radius: 4px; margin-bottom: 16px; }
-        .tabs { display: flex; gap: 8px; margin-bottom: 16px; }
-        .tab { padding: 8px 16px; background: #ddd; border-radius: 4px; cursor: pointer; text-decoration: none; color: #333; }
-        .tab.active { background: #2c3e50; color: #fff; }
-    </style>
-</head>
-<body>
-<h1>Multi-Guild Server Management</h1>
+{% extends "base.html" %}
+{% block title %}Servers · Prayer Bot{% endblock %}
 
-<div class="tabs">
-    <a href="/" class="tab">🏠 Home</a>
-    <span class="tab active">⚙️ Servers</span>
-</div>
+{% block content %}
+<h1 class="text-xl font-semibold mb-1">Server Management</h1>
+<p class="text-slate-400 text-sm mb-4">
+  Select voice/text channels and enable the bot for each server. Changes apply live — no restart needed.
+</p>
 
-<p class="timezone-note">Channels are auto-discovered from Discord. Select voice/text channels and enable the bot for each server.</p>
-
-{% for s in servers %}
-<div class="server-card">
-    <h2>{{ s.guild_name }} <span style="font-size:14px;color:#999;">({{ s.guild_id }})</span></h2>
-    <p>Status: <span class="badge badge-{{ 'on' if s.enabled else 'off' }}">{{ 'ON' if s.enabled else 'OFF' }}</span>
-    {% if s.voice_channel_id %} | Voice: {{ s.voice_channel_id }} {% endif %}
-    {% if s.text_channel_id %} | Text: {{ s.text_channel_id }} {% endif %}</p>
-    <p>
-        <a href="/prayers/{{ s.guild_id }}" class="btn">📅 Schedule</a>
-        <a href="/prayers/public/{{ s.guild_id }}" class="btn" style="background:#555;">👁️ Public View</a>
-    </p>
-
-    <form method="post" action="/servers/update" style="max-width:500px;">
-        <input type="hidden" name="guild_id" value="{{ s.guild_id }}">
-        <label><input type="checkbox" name="enabled" value="on" {% if s.enabled %}checked{% endif %}> Enabled</label>
-
-        <label>Voice Channel:</label>
-        <select name="voice_channel_id">
-            <option value="">-- Select voice channel --</option>
-            {% for vc in s.voice_channels %}
-            <option value="{{ vc.channel_id }}" {% if s.voice_channel_id == vc.channel_id %}selected{% endif %}>{{ vc.channel_name }}</option>
-            {% endfor %}
-        </select>
-
-        <label>Text Channel (for notifications):</label>
-        <select name="text_channel_id">
-            <option value="">-- Select text channel --</option>
-            {% for tc in s.text_channels %}
-            <option value="{{ tc.channel_id }}" {% if s.text_channel_id == tc.channel_id %}selected{% endif %}>{{ tc.channel_name }}</option>
-            {% endfor %}
-        </select>
-
-        <button type="submit">Save & Apply Live (no restart)</button>
-    </form>
-</div>
-{% endfor %}
+{% if flash %}
+  <div class="mb-4 rounded bg-emerald-900/40 border border-emerald-700 px-3 py-2 text-sm text-emerald-200">{{ flash }}</div>
+{% endif %}
 
 {% if not servers %}
-<p>No servers discovered yet. Invite the bot to a Discord server to see it here.</p>
+  <div class="rounded bg-slate-900 border border-slate-800 px-4 py-8 text-center text-slate-400">
+    No servers discovered yet. Invite the bot to a Discord server to see it here.
+  </div>
 {% endif %}
 
-{% if servers %}
-<div class="server-card">
-    <h2>🎛️ Playback Controls</h2>
-    <p>Current volume: <strong id="volume-display">{{ current_volume }}%</strong></p>
-    <input type="hidden" id="volume-guild-id" value="{{ servers[0].guild_id }}">
-    <input type="range" id="volume-slider" name="volume_percent" min="50" max="250" value="{{ current_volume }}"
-           oninput="this.nextElementSibling.textContent=this.value+'%'" style="width:200px;">
-    <span id="volume-label">{{ current_volume }}%</span>
-    <button type="button" onclick="setVolume()">Set Volume</button>
-    <script>
-    async function setVolume() {
-        const slider = document.getElementById('volume-slider');
-        const display = document.getElementById('volume-display');
-        const label = document.getElementById('volume-label');
-        const guildId = document.getElementById('volume-guild-id').value;
-        const vol = slider.value;
-        label.textContent = vol + '%';
-        display.textContent = vol + '%';
-        try {
-            await fetch('/controls/volume', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-                body: new URLSearchParams({guild_id: guildId, volume_percent: vol})
-            });
-        } catch(e) { console.error(e); }
-    }
-    </script>
-    <p style="margin-top:12px;">
-    {% for s in servers %}
-    <form method="post" action="/controls" style="display:inline;">
-        <input type="hidden" name="guild_id" value="{{ s.guild_id }}">
-        <button type="submit" name="action" value="skip">⏭ Skip</button>
-        <button type="submit" name="action" value="pause">⏸ Pause</button>
-        <button type="submit" name="action" value="resume">▶ Resume</button>
+<div class="space-y-4">
+  {% for s in servers %}
+    <form method="post" action="/servers/update" class="rounded-lg bg-slate-900 border border-slate-800 p-4">
+      <input type="hidden" name="guild_id" value="{{ s.guild_id }}">
+
+      <div class="flex items-center justify-between mb-3">
+        <div>
+          <div class="font-semibold">{{ s.guild_name }}</div>
+          <div class="text-xs text-slate-500">id {{ s.guild_id }}</div>
+        </div>
+        <div class="flex items-center gap-3">
+          <label class="flex items-center gap-2 text-sm cursor-pointer select-none">
+            <input type="checkbox" name="enabled" value="on" {{ "checked" if s.enabled else "" }}
+                   class="h-4 w-4 rounded border-slate-600 bg-slate-800">
+            <span>Enabled</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <label class="text-sm">
+          <span class="block text-slate-400 mb-1">Voice channel</span>
+          <select name="voice_channel_id"
+                  class="w-full rounded bg-slate-800 border border-slate-700 px-2 py-1.5 text-slate-100">
+            <option value="">— none —</option>
+            {% for vc in s.voice_channels %}
+              <option value="{{ vc.channel_id }}" {{ "selected" if s.voice_channel_id == vc.channel_id else "" }}>
+                {{ vc.channel_name }}
+              </option>
+            {% endfor %}
+          </select>
+        </label>
+
+        <label class="text-sm">
+          <span class="block text-slate-400 mb-1">Text channel (notifications)</span>
+          <select name="text_channel_id"
+                  class="w-full rounded bg-slate-800 border border-slate-700 px-2 py-1.5 text-slate-100">
+            <option value="">— none —</option>
+            {% for tc in s.text_channels %}
+              <option value="{{ tc.channel_id }}" {{ "selected" if s.text_channel_id == tc.channel_id else "" }}>
+                {{ tc.channel_name }}
+              </option>
+            {% endfor %}
+          </select>
+        </label>
+      </div>
+
+      <div class="mt-3 flex items-center justify-between">
+        <div class="flex gap-2 text-xs">
+          <a href="/prayers/{{ s.guild_id }}" class="text-indigo-400 hover:text-indigo-300">📅 Schedule</a>
+          <a href="/prayers/public/{{ s.guild_id }}" class="text-slate-400 hover:text-slate-300">👁 Public</a>
+        </div>
+        <button type="submit"
+                class="rounded bg-indigo-600 hover:bg-indigo-500 px-3 py-1.5 text-sm font-medium">
+          Save
+        </button>
+      </div>
     </form>
+  {% endfor %}
+</div>
+
+{% if servers %}
+<div class="mt-6 rounded-lg bg-slate-900 border border-slate-800 p-4">
+  <h2 class="font-semibold mb-3">🎛️ Playback Controls</h2>
+
+  <div class="flex flex-wrap items-center gap-4 mb-3">
+    <div class="flex items-center gap-2">
+      <span class="text-sm text-slate-400">Volume:</span>
+      <strong id="volume-display" class="text-sm">{{ current_volume }}%</strong>
+    </div>
+    <input type="hidden" id="volume-guild-id" value="{{ servers[0].guild_id }}">
+    <input type="range" id="volume-slider" min="50" max="250" value="{{ current_volume }}"
+           oninput="document.getElementById('volume-label').textContent=this.value+'%'"
+           class="w-32">
+    <span id="volume-label" class="text-sm text-slate-400">{{ current_volume }}%</span>
+    <button type="button" onclick="setVolume()"
+            class="rounded bg-indigo-600 hover:bg-indigo-500 px-3 py-1 text-sm">
+      Set Volume
+    </button>
+  </div>
+
+  <div class="flex flex-wrap gap-2">
+    {% for s in servers if s.enabled %}
+    <div class="flex items-center gap-1">
+      <span class="text-xs text-slate-500 mr-1">{{ s.guild_name[:12] }}</span>
+      <button onclick="sendControl('{{ s.guild_id }}', 'skip')"
+              class="rounded bg-slate-800 hover:bg-slate-700 px-2 py-1 text-xs">⏭</button>
+      <button onclick="sendControl('{{ s.guild_id }}', 'pause')"
+              class="rounded bg-slate-800 hover:bg-slate-700 px-2 py-1 text-xs">⏸</button>
+      <button onclick="sendControl('{{ s.guild_id }}', 'resume')"
+              class="rounded bg-slate-800 hover:bg-slate-700 px-2 py-1 text-xs">▶</button>
+    </div>
     {% endfor %}
-    </p>
+  </div>
+  <p id="control-feedback" class="text-xs text-emerald-400 mt-2 hidden"></p>
 </div>
 {% endif %}
 
-<p><small>Live apply uses <code>apply_server_config</code> from <code>discord-radio</code> framework.</small></p>
-</body>
-</html>
+<script>
+async function setVolume() {
+  const slider = document.getElementById('volume-slider');
+  const display = document.getElementById('volume-display');
+  const guildId = document.getElementById('volume-guild-id').value;
+  const vol = slider.value;
+  display.textContent = vol + '%';
+  try {
+    await fetch('/controls/volume', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      body: new URLSearchParams({guild_id: guildId, volume_percent: vol})
+    });
+  } catch(e) { console.error(e); }
+}
+
+async function sendControl(guildId, action) {
+  const fb = document.getElementById('control-feedback');
+  try {
+    const r = await fetch('/controls', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      body: new URLSearchParams({guild_id: guildId, action: action})
+    });
+    fb.textContent = action + ' sent to ' + guildId;
+    fb.classList.remove('hidden');
+    setTimeout(() => fb.classList.add('hidden'), 2000);
+  } catch(e) {
+    fb.textContent = 'Error: ' + e;
+    fb.classList.remove('hidden');
+    fb.classList.add('text-red-400');
+  }
+}
+</script>
+{% endblock %}
