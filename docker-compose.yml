@@ -4,7 +4,6 @@ services:
   bot:
     build: .
     container_name: prayer-bot
-    network_mode: host
     volumes:
       - ./data:/app/data
       - ./media/prayers:/app/media/prayers
