@@ -112,12 +112,20 @@ async def prayers_admin(
 ):
     require_auth(request)
 
-    # Seed default schedules for all 6 prayer types on all 7 days if none exist
+    # Seed 3 empty slots per day (max allowed)
     existing = get_weekly_schedule(db, guild_id)
     if not existing:
         for day in range(7):
-            for pt in PrayerType:
-                upsert_schedule(db, guild_id, day, pt, time(6, 0), enabled=False)
+            for slot_num in range(1, 4):
+                # Use unique placeholder times (00:00 + slot offset) to satisfy UNIQUE constraint
+                placeholder_time = time(0, slot_num)  # 00:01, 00:02, 00:03
+                # Use first prayer type as placeholder; user can change it
+                upsert_schedule(
+                    db, guild_id, day,
+                    list(PrayerType)[0],
+                    placeholder_time,
+                    enabled=False,
+                )
         existing = get_weekly_schedule(db, guild_id)
 
     cfg = get_guild_config(db, guild_id)
@@ -149,17 +157,47 @@ async def save_prayers(
     require_auth(request)
     form_data = await request.form()
     schedules = get_weekly_schedule(db, guild_id)
+
+    # Validate: no duplicate times per day
+    seen: dict[str, set[str]] = {}  # day_idx -> set of times
     for s in schedules:
         time_str = form_data.get(f"time_{s.id}")
+        if not time_str:
+            continue
+        day = str(s.day_of_week)
+        if day not in seen:
+            seen[day] = set()
+        if time_str in seen[day]:
+            import urllib.parse
+            msg = urllib.parse.quote(f"Duplicate time {time_str} on same day — each slot must have a unique time")
+            return RedirectResponse(f"/prayers/{guild_id}?flash={msg}", status_code=303)
+        seen[day].add(time_str)
+
+    for s in schedules:
+        time_str = form_data.get(f"time_{s.id}")
+        prayer_str = form_data.get(f"prayer_{s.id}", "")
         enabled_val = f"enabled_{s.id}" in form_data
         if time_str:
             try:
                 t = time.fromisoformat(time_str)
-                # Store as UTC (timezone rules: UTC base)
-                update_schedule(db, s.id, t, enabled_val)
+                if prayer_str:
+                    # Update prayer_type too
+                    try:
+                        pt = PrayerType(prayer_str)
+                        db.execute(
+                            "UPDATE prayer_schedules SET time_utc=?, enabled=?, prayer_type=? WHERE id=?",
+                            (t.isoformat(), int(enabled_val), pt.value, s.id),
+                        )
+                    except ValueError:
+                        update_schedule(db, s.id, t, enabled_val)
+                else:
+                    update_schedule(db, s.id, t, enabled_val)
             except ValueError:
                 pass
-    # Enqueue live apply (no restart) — task 3 / 4
+        elif enabled_val and not time_str:
+            pass  # enabled but no time — skip
+
+    # Enqueue live apply
     from dashboard.commands import enqueue
     enqueue(db, command="apply_server", requested_by="admin", payload={"guild_id": guild_id})
     return RedirectResponse(f"/prayers/{guild_id}?flash=Saved", status_code=303)
@@ -179,6 +217,30 @@ async def adhoc_play(
     enqueue(db, command="play_track", requested_by="admin", payload={
         "guild_id": guild_id,
         "track_id": filename,
+        "prayer_type": prayer_type,
+    })
+    return JSONResponse({"ok": True, "msg": f"Queued: {prayer_type} prayer will play in a few seconds"})
+
+
+@router.post("/prayers/adhoc-by-id")
+async def adhoc_play_by_id(
+    request: Request,
+    schedule_id: int = Form(...),
+    db: Database = Depends(get_db),
+):
+    require_auth(request)
+    sched = db.fetchone("SELECT * FROM prayer_schedules WHERE id=?", (schedule_id,))
+    if not sched:
+        return JSONResponse({"ok": False, "msg": "Schedule not found"}, status_code=404)
+    prayer_type = PrayerType(sched["prayer_type"])
+    filename = get_audio_filename(prayer_type)
+    from dashboard.commands import enqueue
+    enqueue(db, command="play_track", requested_by="admin", payload={
+        "guild_id": sched["guild_id"],
+        "track_id": filename,
+        "prayer_type": prayer_type.value,
+    })
+    return JSONResponse({"ok": True, "msg": "Queued"})
         "prayer_type": prayer_type,
     })
     return HTMLResponse(f"Queued: {prayer_type} prayer will play in a few seconds")
