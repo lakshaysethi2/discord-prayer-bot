@@ -291,15 +291,13 @@ async def controls(
 
     if action == "skip":
         enqueue(db, command="skip", requested_by="admin", payload={"guild_id": guild_id})
-        return RedirectResponse(f"/servers?flash=Queued+skip", status_code=303)
     elif action == "pause":
         enqueue(db, command="pause", requested_by="admin", payload={"guild_id": guild_id})
-        return RedirectResponse(f"/servers?flash=Queued+pause", status_code=303)
     elif action == "resume":
         enqueue(db, command="resume", requested_by="admin", payload={"guild_id": guild_id})
-        return RedirectResponse(f"/servers?flash=Queued+resume", status_code=303)
     else:
-        return RedirectResponse(f"/servers?flash=Unknown+action", status_code=303)
+        return JSONResponse({"ok": False, "error": "unknown action"}, status_code=400)
+    return JSONResponse({"ok": True, "action": action})
 
 
 @router.post("/controls/volume")
@@ -316,7 +314,4 @@ async def set_volume(
         "guild_id": guild_id,
         "volume_percent": vol,
     })
-    # If called via fetch/JS, return JSON; otherwise redirect
-    if request.headers.get("accept") == "application/json" or request.headers.get("x-requested-with") == "XMLHttpRequest":
-        return JSONResponse({"ok": True, "volume": vol})
-    return RedirectResponse(f"/servers?flash=Queued+volume+{vol}%25", status_code=303)
+    return JSONResponse({"ok": True, "volume": vol})
