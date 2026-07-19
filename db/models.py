@@ -6,6 +6,12 @@ from enum import Enum
 from typing import Optional
 
 
+SCHEMA = [
+    # Prayer bot uses idempotent table creation in db.prayers,
+    # so the base schema is intentionally empty.
+]
+
+
 class PrayerType(str, Enum):
     BUDDHIST = "buddhist"
     CHRISTIAN = "christian"
