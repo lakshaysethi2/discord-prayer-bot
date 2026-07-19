@@ -77,14 +77,30 @@
 {% if servers %}
 <div class="server-card">
     <h2>🎛️ Playback Controls</h2>
-    <p>Current volume: <strong>{{ current_volume }}%</strong></p>
-    <form method="post" action="/controls/volume" style="display:inline;">
-        <input type="hidden" name="guild_id" value="{{ servers[0].guild_id }}">
-        <input type="range" name="volume_percent" min="50" max="250" value="{{ current_volume }}"
-               oninput="this.nextElementSibling.textContent=this.value+'%'" style="width:200px;">
-        <span>{{ current_volume }}%</span>
-        <button type="submit">Set Volume</button>
-    </form>
+    <p>Current volume: <strong id="volume-display">{{ current_volume }}%</strong></p>
+    <input type="hidden" id="volume-guild-id" value="{{ servers[0].guild_id }}">
+    <input type="range" id="volume-slider" name="volume_percent" min="50" max="250" value="{{ current_volume }}"
+           oninput="this.nextElementSibling.textContent=this.value+'%'" style="width:200px;">
+    <span id="volume-label">{{ current_volume }}%</span>
+    <button type="button" onclick="setVolume()">Set Volume</button>
+    <script>
+    async function setVolume() {
+        const slider = document.getElementById('volume-slider');
+        const display = document.getElementById('volume-display');
+        const label = document.getElementById('volume-label');
+        const guildId = document.getElementById('volume-guild-id').value;
+        const vol = slider.value;
+        label.textContent = vol + '%';
+        display.textContent = vol + '%';
+        try {
+            await fetch('/controls/volume', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                body: new URLSearchParams({guild_id: guildId, volume_percent: vol})
+            });
+        } catch(e) { console.error(e); }
+    }
+    </script>
     <p style="margin-top:12px;">
     {% for s in servers %}
     <form method="post" action="/controls" style="display:inline;">

@@ -16,7 +16,7 @@ import os
 from datetime import datetime, time, timedelta
 
 from fastapi import APIRouter, Request, Form, Depends, Query
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from db.database import Database
@@ -316,4 +316,7 @@ async def set_volume(
         "guild_id": guild_id,
         "volume_percent": vol,
     })
+    # If called via fetch/JS, return JSON; otherwise redirect
+    if request.headers.get("accept") == "application/json" or request.headers.get("x-requested-with") == "XMLHttpRequest":
+        return JSONResponse({"ok": True, "volume": vol})
     return RedirectResponse(f"/servers?flash=Queued+volume+{vol}%25", status_code=303)
