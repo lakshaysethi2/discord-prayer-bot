@@ -1,81 +1,108 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Prayer Schedule - Public View</title>
+    <title>Prayer Schedule</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
-        body { font-family: sans-serif; margin: 40px; background: #f9f9f9; color: #333; }
-        h1 { color: #2c3e50; }
-        table { width: 100%; border-collapse: collapse; background: #fff; margin-top: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-        th, td { padding: 12px 16px; border-bottom: 1px solid #ddd; text-align: left; }
-        th { background: #2c3e50; color: #fff; }
-        .tz-info { background: #e8f4f8; padding: 10px 16px; border-radius: 6px; margin-bottom: 16px; }
-        .utc-time { color: #999; font-size: 12px; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f3f0; color: #3d3226; min-height: 100vh; }
+        .container { max-width: 640px; margin: 0 auto; padding: 24px 16px; }
+        header { text-align: center; padding: 48px 16px 32px; background: linear-gradient(135deg, #5b4a3f 0%, #3d3226 100%); color: #f5f3f0; }
+        header h1 { font-size: 1.8em; margin-bottom: 4px; }
+        header p { opacity: 0.8; font-size: 0.95em; }
+
+        .guild-select { margin-bottom: 24px; }
+        .guild-select select { width: 100%; padding: 12px 16px; border: 1px solid #ddd; border-radius: 10px; font-size: 15px; background: #fff; appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23666' d='M6 8L1 3h10z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 16px center; }
+
+        .tz-badge { display: inline-block; background: #fff; padding: 6px 14px; border-radius: 20px; font-size: 13px; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+        .day-group { margin-bottom: 28px; }
+        .day-label { font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #8b7355; margin-bottom: 10px; padding-left: 4px; }
+        .prayer-card { display: flex; align-items: center; gap: 12px; background: #fff; padding: 14px 16px; border-radius: 10px; margin-bottom: 6px; box-shadow: 0 1px 2px rgba(0,0,0,0.04); transition: transform 0.1s; }
+        .prayer-card:hover { transform: translateY(-1px); }
+        .prayer-emoji { font-size: 1.4em; width: 32px; text-align: center; }
+        .prayer-info { flex: 1; }
+        .prayer-name { font-weight: 600; font-size: 15px; }
+        .prayer-time-local { color: #5b4a3f; font-size: 14px; }
+        .prayer-time-utc { color: #aaa; font-size: 11px; margin-left: 6px; }
+        .join-btn { background: #5865F2; color: #fff; text-decoration: none; padding: 6px 14px; border-radius: 16px; font-size: 13px; font-weight: 500; white-space: nowrap; }
+        .join-btn:hover { background: #4752c4; }
+        .empty { text-align: center; padding: 60px 20px; color: #999; }
+        .empty .emoji { font-size: 3em; display: block; margin-bottom: 12px; }
     </style>
 </head>
 <body>
-<h1>🕌 Prayer Schedule</h1>
-<h2 style="font-weight:normal;color:#666;margin-top:-10px;">{{ guild_name }}</h2>
+<header>
+    <h1>🕌 {{ guild_name }}</h1>
+    <p>Prayer Schedule</p>
+</header>
 
-{% if all_guilds|length > 1 %}
-<div style="margin-bottom:16px;">
-    <label style="font-weight:600;">Switch guild:</label>
-    <select onchange="if(this.value) window.location.href='/prayers/public/' + this.value" style="padding:6px 12px;border-radius:4px;border:1px solid #ccc;font-size:14px;">
-        <option value="">-- Select server --</option>
-        {% for g in all_guilds %}
-        <option value="{{ g.guild_id }}" {% if g.guild_id == guild_id %}selected{% endif %}>{{ g.name }}</option>
+<div class="container">
+    {% if all_guilds|length > 1 %}
+    <div class="guild-select">
+        <select onchange="if(this.value) window.location.href='/prayers/public/' + this.value">
+            {% for g in all_guilds %}
+            <option value="{{ g.guild_id }}" {% if g.guild_id == guild_id %}selected{% endif %}>{{ g.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    {% endif %}
+
+    <div class="tz-badge" id="tz-badge">🕐 detecting...</div>
+
+    {% set days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] %}
+    {% set emojis = {"buddhist": "☸️", "christian": "✝️", "jewish": "✡️", "sufi": "☪️", "vedantic": "🕉️", "three_daily": "🌅"} %}
+
+    {% set has_any = false %}
+    {% for day_idx in range(7) %}
+        {% set day_has = false %}
+        {% for row in rows %}
+            {% if row.schedule.day_of_week == day_idx and row.schedule.enabled %}
+                {% set day_has = true %}
+                {% set has_any = true %}
+            {% endif %}
         {% endfor %}
-    </select>
-</div>
-{% endif %}
-
-<div class="tz-info">
-    🕐 Times shown in your local timezone: <strong id="tz-name">detecting...</strong>
-    (<span id="tz-offset">...</span>)
-    <br><small>All times are stored in UTC on the server.</small>
-</div>
-
-<table>
-    <tr>
-        <th>Day</th>
-        <th>Prayer</th>
-        <th>Scheduled Time</th>
-        <th>Status</th>
-    </tr>
-    {% for row in rows %}
-    <tr class="prayer-row" data-utc-time="{{ row.schedule.time_utc }}">
-        <td>
-            {% set days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] %}
-            {{ days[row.schedule.day_of_week] }}
-        </td>
-        <td>{{ row.schedule.prayer_type.value | title }}</td>
-        <td>
-            <span class="local-time">--:--</span>
-            <br><small class="utc-time">UTC: {{ row.schedule.time_utc }}</small>
-        </td>
-        <td>{% if row.schedule.enabled %}✅ Active{% else %}⏸️ Disabled{% endif %}</td>
-    </tr>
+        {% if day_has %}
+        <div class="day-group">
+            <div class="day-label">{{ days[day_idx] }}</div>
+            {% for row in rows %}
+                {% if row.schedule.day_of_week == day_idx and row.schedule.enabled %}
+                <div class="prayer-card" data-utc-time="{{ row.schedule.time_utc }}">
+                    <div class="prayer-emoji">{{ emojis.get(row.schedule.prayer_type.value, "🙏") }}</div>
+                    <div class="prayer-info">
+                        <div class="prayer-name">{{ row.schedule.prayer_type.value | title }}</div>
+                        <div class="prayer-time-local">
+                            <span class="local-time">--:--</span>
+                            <span class="prayer-time-utc">UTC {{ row.schedule.time_utc }}</span>
+                        </div>
+                    </div>
+                    <a class="join-btn" href="discord://-/channels/{{ guild_id }}/{{ voice_channel_id }}" target="_blank">Join</a>
+                </div>
+                {% endif %}
+            {% endfor %}
+        </div>
+        {% endif %}
     {% endfor %}
-</table>
+
+    {% if not has_any %}
+    <div class="empty">
+        <span class="emoji">📅</span>
+        <p>No prayers scheduled yet.<br>Check back soon!</p>
+    </div>
+    {% endif %}
+</div>
 
 <script>
-// --- Timezone detection ---
 const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-const now = new Date();
-const offsetMinutes = -now.getTimezoneOffset();
-const offsetHours = offsetMinutes / 60;
-const offsetStr = (offsetHours >= 0 ? '+' : '') + offsetHours.toFixed(1) + 'h';
-document.getElementById('tz-name').textContent = tz;
-document.getElementById('tz-offset').textContent = 'UTC' + offsetStr;
+const offset = -(new Date().getTimezoneOffset()) / 60;
+const sign = offset >= 0 ? '+' : '';
+document.getElementById('tz-badge').textContent = '🕐 ' + tz + ' (UTC' + sign + offset.toFixed(1) + 'h)';
 
-// --- Convert UTC times to local ---
-document.querySelectorAll('.prayer-row').forEach(function(row) {
-    const utcTime = row.dataset.utcTime;
-    if (!utcTime) return;
-    const [h, m] = utcTime.split(':').map(Number);
-    const utcDate = new Date(Date.UTC(2024, 0, 1, h, m));
-    const localH = String(utcDate.getHours()).padStart(2, '0');
-    const localM = String(utcDate.getMinutes()).padStart(2, '0');
-    row.querySelector('.local-time').textContent = localH + ':' + localM;
+document.querySelectorAll('.prayer-card').forEach(card => {
+    const [h, m] = card.dataset.utcTime.split(':').map(Number);
+    const d = new Date(Date.UTC(2024, 0, 1, h, m));
+    const lh = String(d.getHours()).padStart(2, '0');
+    const lm = String(d.getMinutes()).padStart(2, '0');
+    card.querySelector('.local-time').textContent = lh + ':' + lm;
 });
 </script>
 </body>

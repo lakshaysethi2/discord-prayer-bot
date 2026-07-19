@@ -217,6 +217,7 @@ async def prayers_public(
             "guild_name": current_guild_name,
             "all_guilds": all_guilds,
             "rows": rows,
+            "voice_channel_id": cfg.voice_channel_id if cfg else "",
         },
     )
 
