@@ -285,6 +285,12 @@ class PrayerBot(discord.Client):
 
     # ------------------------------------------------------------------ voice state tracking
 
+    async def on_socket_response(self, msg: dict) -> None:
+        if msg.get("t") == "VOICE_SERVER_UPDATE":
+            d = msg.get("d", {})
+            log.info("VOICE_SERVER_UPDATE: guild=%s endpoint=%s token_len=%s",
+                     d.get("guild_id"), d.get("endpoint"), len(d.get("token", "") or ""))
+
     async def on_voice_state_update(self, member, before, after) -> None:
         """Auto-pause when last user leaves; auto-resume when first joins."""
         if member.bot:
