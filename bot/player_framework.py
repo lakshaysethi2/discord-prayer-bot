@@ -25,7 +25,7 @@ import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
-from bot.state import BotState
+from bot.state_framework import BotState
 from provider.client import FileProviderClient, TrackResponse
 
 log = logging.getLogger(__name__)

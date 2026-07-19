@@ -90,41 +90,7 @@ def get_audio_filename(prayer_type: PrayerType) -> str:
 
 
 # ------------------------------------------------------------------
-# Guild config helpers (from discord-radio framework, adapted)
+# Guild config helpers — delegated to db/guilds.py (discord-radio pattern)
 # ------------------------------------------------------------------
 
-def get_guild_config(db: Database, guild_id: str) -> GuildConfig | None:
-    from db.models import GuildConfig
-    row = db.fetchone("SELECT * FROM guild_configs WHERE guild_id=?", (guild_id,))
-    if row is None:
-        return None
-    return GuildConfig(
-        guild_id=row["guild_id"],
-        guild_name=row["guild_name"],
-        enabled=bool(row["enabled"]),
-        voice_channel_id=row["voice_channel_id"],
-        text_channel_id=row["text_channel_id"],
-        timezone_offset_hours=float(row["timezone_offset_hours"] or 0.0),
-        updated_at=row["updated_at"],
-    )
-
-
-def apply_guild_config(
-    db: Database,
-    guild_id: str,
-    enabled: bool = False,
-    voice_channel_id: str | None = None,
-    text_channel_id: str | None = None,
-    timezone_offset_hours: float = 0.0,
-) -> None:
-    db.execute("""
-        INSERT INTO guild_configs
-        (guild_id, enabled, voice_channel_id, text_channel_id, timezone_offset_hours, updated_at)
-        VALUES(?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-        ON CONFLICT(guild_id) DO UPDATE SET
-        enabled=excluded.enabled,
-        voice_channel_id=excluded.voice_channel_id,
-        text_channel_id=excluded.text_channel_id,
-        timezone_offset_hours=excluded.timezone_offset_hours,
-        updated_at=CURRENT_TIMESTAMP
-    """, (guild_id, bool(enabled), voice_channel_id, text_channel_id, float(timezone_offset_hours)))
+from db.guilds import get_guild_config, apply_guild_config, get_guild_configs, get_guild_channels, discover_guild, replace_guild_channels  # noqa: F401, E402

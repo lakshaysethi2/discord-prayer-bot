@@ -12,40 +12,67 @@
         .badge { padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: bold; text-transform: uppercase; }
         .badge-on { background: #27ae60; color: #fff; }
         .badge-off { background: #e74c3c; color: #fff; }
+        .server-card { background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 20px; margin-bottom: 20px; }
+        .server-card h2 { margin-top: 0; color: #2c3e50; }
+        label { display: block; margin: 8px 0 4px; font-weight: 600; }
+        select, input { width: 100%; padding: 8px; margin-bottom: 8px; border: 1px solid #ccc; border-radius: 4px; }
+        button { background: #2c3e50; color: #fff; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-size: 14px; }
+        button:hover { background: #34495e; }
+        .flash { background: #d4edda; color: #155724; padding: 8px 16px; border-radius: 4px; margin-bottom: 16px; }
+        .tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+        .tab { padding: 8px 16px; background: #ddd; border-radius: 4px; cursor: pointer; text-decoration: none; color: #333; }
+        .tab.active { background: #2c3e50; color: #fff; }
     </style>
 </head>
 <body>
 <h1>Multi-Guild Server Management</h1>
-<p class="timezone-note">Copied behavior from <code>discord-radio</code> multi-server architecture (§servers, docs/multi-server.md). Each guild has independent settings but shares the same stream.</p>
 
-<table>
-    <tr>
-        <th>Guild ID</th>
-        <th>Enabled</th>
-        <th>Voice Channel</th>
-        <th>Text Channel</th>
-        <th>Timezone Offset (h)</th>
-    </tr>
-    {% for s in servers %}
-    <tr>
-        <td>{{ s.guild_id }}</td>
-        <td><span class="badge badge-{{ 'on' if s.enabled else 'off' }}">{{ 'ON' if s.enabled else 'OFF' }}</span></td>
-        <td>{{ s.voice_channel_id or '-' }}</td>
-        <td>{{ s.text_channel_id or '-' }}</td>
-        <td>{{ '%+.1f'|format(s.timezone_offset_hours) }}</td>
-    </tr>
-    {% endfor %}
-</table>
+<div class="tabs">
+    <a href="/" class="tab">🏠 Home</a>
+    <span class="tab active">⚙️ Server Settings</span>
+    <a href="/prayers/{{ servers[0].guild_id if servers else '1389131646758031410' }}" class="tab">📅 Schedule</a>
+    <a href="/prayers/public/{{ servers[0].guild_id if servers else '1389131646758031410' }}" class="tab">👁️ Public</a>
+</div>
 
-<h2>Update Server</h2>
-<form method="post" action="/servers/update" style="margin-top:20px; max-width:600px;">
-    <label>Guild ID: <input type="text" name="guild_id" required></label><br><br>
-    <label><input type="checkbox" name="enabled" value="on"> Enabled</label><br><br>
-    <label>Voice Channel ID: <input type="text" name="voice_channel_id"></label><br><br>
-    <label>Text Channel ID: <input type="text" name="text_channel_id"></label><br><br>
-    <label>Timezone Offset (hours): <input type="number" step="0.5" name="timezone_offset_hours" value="0.0"></label><br><br>
-    <button type="submit">Save & Apply Live (no restart)</button>
-</form>
+<p class="timezone-note">Channels are auto-discovered from Discord. Select voice/text channels and enable the bot.</p>
+<p class="timezone-note" style="background:#fff3cd;padding:8px;border-radius:4px;">💡 <strong>Timezone Offset:</strong> Used for the public schedule view to show prayer times in the guild's canonical timezone. The admin schedule page uses your browser's timezone automatically.</p>
+
+{% for s in servers %}
+<div class="server-card">
+    <h2>{{ s.guild_name }} <span style="font-size:14px;color:#999;">({{ s.guild_id }})</span></h2>
+    <p>Status: <span class="badge badge-{{ 'on' if s.enabled else 'off' }}">{{ 'ON' if s.enabled else 'OFF' }}</span>
+    {% if s.voice_channel_id %} | Voice: {{ s.voice_channel_id }} {% endif %}
+    {% if s.text_channel_id %} | Text: {{ s.text_channel_id }} {% endif %}</p>
+
+    <form method="post" action="/servers/update" style="max-width:500px;">
+        <input type="hidden" name="guild_id" value="{{ s.guild_id }}">
+        <label><input type="checkbox" name="enabled" value="on" {% if s.enabled %}checked{% endif %}> Enabled</label>
+
+        <label>Voice Channel:</label>
+        <select name="voice_channel_id">
+            <option value="">-- Select voice channel --</option>
+            {% for vc in s.voice_channels %}
+            <option value="{{ vc.channel_id }}" {% if s.voice_channel_id == vc.channel_id %}selected{% endif %}>{{ vc.channel_name }}</option>
+            {% endfor %}
+        </select>
+
+        <label>Text Channel (for notifications):</label>
+        <select name="text_channel_id">
+            <option value="">-- Select text channel --</option>
+            {% for tc in s.text_channels %}
+            <option value="{{ tc.channel_id }}" {% if s.text_channel_id == tc.channel_id %}selected{% endif %}>{{ tc.channel_name }}</option>
+            {% endfor %}
+        </select>
+
+        <button type="submit">Save & Apply Live (no restart)</button>
+    </form>
+</div>
+{% endfor %}
+
+{% if not servers %}
+<p>No servers discovered yet. Invite the bot to a Discord server to see it here.</p>
+{% endif %}
+
 <p><small>Live apply uses <code>apply_server_config</code> from <code>discord-radio</code> framework.</small></p>
 </body>
 </html>

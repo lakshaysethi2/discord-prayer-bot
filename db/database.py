@@ -97,6 +97,11 @@ class Database:
                 # Backfill: add guild_id to watch_sessions if missing
                 self._ensure_column(cur, "watch_sessions", "guild_id", "TEXT NOT NULL DEFAULT ''")
                 self._ensure_column(cur, "guild_channels", "parent_id", "TEXT")
+                # Migration: rename "time" to "time_utc" in prayer_schedules for existing DBs
+                self._ensure_column(cur, "prayer_schedules", "time_utc", "TEXT")
+                existing_cols = {row["name"] for row in cur.execute("PRAGMA table_info(prayer_schedules)").fetchall()}
+                if "time" in existing_cols and "time_utc" in existing_cols:
+                    cur.execute("UPDATE prayer_schedules SET time_utc = time WHERE time_utc IS NULL OR time_utc = ''")
             finally:
                 cur.close()
 
@@ -145,6 +150,32 @@ class Database:
                 self._conn.commit()
             finally:
                 cur.close()
+
+    # ------------------------------------------------------------ bot_state I/O
+    def set_state(self, key: str, value: str | int | float | bool | None) -> None:
+        v = "" if value is None else str(value)
+        self.execute(
+            "INSERT INTO bot_state(key, value) VALUES(?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            (key, v),
+        )
+
+    def get_state(self, key: str, default: str | None = None) -> str | None:
+        row = self.fetchone("SELECT value FROM bot_state WHERE key = ?", (key,))
+        return row["value"] if row is not None else default
+
+    def get_state_int(self, key: str, default: int = 0) -> int:
+        v = self.get_state(key)
+        try:
+            return int(v) if v not in (None, "") else default
+        except (TypeError, ValueError):
+            return default
+
+    def get_state_bool(self, key: str, default: bool = False) -> bool:
+        v = self.get_state(key)
+        if v is None or v == "":
+            return default
+        return v.lower() in ("1", "true", "yes", "on")
 
     def close(self) -> None:
         with self._lock:

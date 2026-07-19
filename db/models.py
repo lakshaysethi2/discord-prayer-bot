@@ -237,3 +237,11 @@ class BotStateKey:
 BOT_STATE_KEYS: frozenset[str] = frozenset(
     v for k, v in vars(BotStateKey).items() if not k.startswith("_") and isinstance(v, str)
 )
+
+# Milestone thresholds — in hours. Column names must match user_totals schema.
+MILESTONES: tuple[tuple[int, str], ...] = (
+    (5, "milestone_5h"),
+    (10, "milestone_10h"),
+    (100, "milestone_100h"),
+    (1000, "milestone_1000h"),
+)

@@ -11,14 +11,16 @@ Includes:
 from __future__ import annotations
 
 import contextlib
+import hmac
+import os
 from datetime import datetime, time, timedelta
-from typing import Any
 
 from fastapi import APIRouter, Request, Form, Depends, Query
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from db.database import Database
+from db.models import PrayerSchedule, PrayerType, PRAYER_AUDIO_MAP
 from db.prayers import (
     get_weekly_schedule,
     update_schedule,
@@ -31,6 +33,51 @@ from dashboard.auth import require_auth
 
 router = APIRouter()
 templates = Jinja2Templates(directory="dashboard/templates")
+
+
+# ------------------------------------------------------------------ root
+@router.get("/", response_class=HTMLResponse)
+async def root(request: Request):
+    return templates.TemplateResponse(request, "landing.html", {"request": request})
+
+
+# ------------------------------------------------------------------ login
+@router.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request):
+    return HTMLResponse("""
+<!DOCTYPE html>
+<html><head><title>Login — Prayer Bot</title>
+<style>
+body { font-family: sans-serif; margin: 80px auto; max-width: 400px; background: #f9f9f9; }
+form { background: #fff; padding: 24px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+input { width: 100%; padding: 10px; margin: 8px 0; border: 1px solid #ccc; border-radius: 4px; }
+button { background: #2c3e50; color: #fff; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; }
+</style></head><body>
+<h2>Admin Login</h2>
+<form method="post" action="/login">
+<label>Admin Token:</label>
+<input type="password" name="token" placeholder="Enter ADMIN_TOKEN" required>
+<button type="submit">Login</button>
+</form>
+</body></html>""")
+
+
+@router.post("/login")
+async def login(request: Request):
+    form = await request.form()
+    token = form.get("token", "")
+    expected = os.environ.get("ADMIN_TOKEN", "dev-token-change-me")
+    if not hmac.compare_digest(str(token), expected):
+        return HTMLResponse("<h2>Invalid token</h2><a href='/login'>Try again</a>", status_code=403)
+    response = RedirectResponse("/servers", status_code=302)
+    response.set_cookie(
+        key="prayer_session",
+        value=expected,
+        httponly=True,
+        samesite="lax",
+        max_age=86400,
+    )
+    return response
 
 
 def get_db():
@@ -63,34 +110,28 @@ async def prayers_admin(
     guild_id: str,
     db: Database = Depends(get_db),
 ):
-    # Auth check (security agent requirement)
-    from dashboard.auth import require_auth
     require_auth(request)
-    schedules = get_weekly_schedule(db, guild_id)
+
+    # Seed default schedules for all 6 prayer types on all 7 days if none exist
+    existing = get_weekly_schedule(db, guild_id)
+    if not existing:
+        for day in range(7):
+            for pt in PrayerType:
+                upsert_schedule(db, guild_id, day, pt, time(6, 0), enabled=False)
+        existing = get_weekly_schedule(db, guild_id)
+
     cfg = get_guild_config(db, guild_id)
     timezone_offset_hours = cfg.timezone_offset_hours if cfg else 0.0
-
-    # Calendar events in UTC (base storage); display will convert
-    today = datetime.now().date()
-    monday = today - timedelta(days=today.weekday())
-    events = []
-    for s in schedules:
-        sched_date = monday + timedelta(days=s.day_of_week)
-        events.append({
-            "title": s.prayer_type.value,
-            "start": f"{sched_date.isoformat()}T{s.time_utc.isoformat()}",
-            "timezone_offset_hours": timezone_offset_hours,
-        })
 
     return templates.TemplateResponse(
         request,
         "prayers_admin.html",
         {
             "guild_id": guild_id,
-            "schedules": schedules,
-            "calendar_events": events,
+            "schedules": existing,
             "timezone_offset_hours": timezone_offset_hours,
             "timezone_note": f"Times stored in UTC. Guild offset: {timezone_offset_hours:+.1f}h",
+            "get_audio_filename": get_audio_filename,
         },
     )
 
@@ -101,7 +142,6 @@ async def save_prayers(
     guild_id: str = Form(...),
     db: Database = Depends(get_db),
 ):
-    from dashboard.auth import require_auth
     require_auth(request)
     form_data = await request.form()
     schedules = get_weekly_schedule(db, guild_id)
@@ -117,9 +157,27 @@ async def save_prayers(
                 pass
     # Enqueue live apply (no restart) — task 3 / 4
     from dashboard.commands import enqueue
-    from db.models import BotStateKey
     enqueue(db, command="apply_server", requested_by="admin", payload={"guild_id": guild_id})
     return RedirectResponse(f"/prayers/{guild_id}?flash=Saved", status_code=303)
+
+
+# ------------------------------------------------------------------ adhoc
+@router.post("/prayers/adhoc")
+async def adhoc_play(
+    request: Request,
+    guild_id: str = Form(...),
+    prayer_type: str = Form(...),
+    filename: str = Form(...),
+    db: Database = Depends(get_db),
+):
+    require_auth(request)
+    from dashboard.commands import enqueue
+    enqueue(db, command="play_track", requested_by="admin", payload={
+        "guild_id": guild_id,
+        "track_id": filename,
+        "prayer_type": prayer_type,
+    })
+    return HTMLResponse(f"Queued: {prayer_type} prayer will play in a few seconds")
 
 
 # ------------------------------------------------------------------ public
@@ -161,19 +219,24 @@ async def servers_page(
     request: Request,
     db: Database = Depends(get_db),
 ):
-    from db.prayers import get_guild_config
-    # Minimal multi-guild view: list discovered guilds from DB
-    guild_rows = db.fetchall("SELECT DISTINCT guild_id FROM prayer_schedules ORDER BY guild_id")
+    from db.prayers import get_guild_config, get_guild_channels
+    # Show all guilds from guild_configs (auto-discovered)
+    guild_rows = db.fetchall("SELECT guild_id, guild_name FROM guild_configs ORDER BY guild_id")
     servers = []
     for r in guild_rows:
         gid = r["guild_id"]
         cfg = get_guild_config(db, gid)
+        channels = get_guild_channels(db, gid)
+        voice_channels = [c for c in channels if c.channel_type == "voice"]
+        text_channels = [c for c in channels if c.channel_type == "text"]
         servers.append({
             "guild_id": gid,
+            "guild_name": r["guild_name"] or gid,
             "enabled": cfg.enabled if cfg else False,
             "voice_channel_id": cfg.voice_channel_id if cfg else None,
             "text_channel_id": cfg.text_channel_id if cfg else None,
-            "timezone_offset_hours": cfg.timezone_offset_hours if cfg else 0.0,
+            "voice_channels": voice_channels,
+            "text_channels": text_channels,
         })
     return templates.TemplateResponse(
         request,
@@ -192,9 +255,9 @@ async def servers_update(
     enabled: str = Form("off"),
     voice_channel_id: str = Form(""),
     text_channel_id: str = Form(""),
-    timezone_offset_hours: float = Form(0.0),
     db: Database = Depends(get_db),
 ):
+    require_auth(request)
     cfg = get_guild_config(db, guild_id)
     wants_enabled = enabled == "on"
     apply_guild_config(
@@ -203,7 +266,6 @@ async def servers_update(
         enabled=wants_enabled,
         voice_channel_id=voice_channel_id or None,
         text_channel_id=text_channel_id or None,
-        timezone_offset_hours=float(timezone_offset_hours) if timezone_offset_hours else 0.0,
     )
     # Enqueue live apply (no restart) — task 3 / 4
     from dashboard.commands import enqueue
