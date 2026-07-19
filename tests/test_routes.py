@@ -27,12 +27,13 @@ def test_admin_and_public_routes(monkeypatch):
         token = os.environ.get("ADMIN_TOKEN", "dev-token-change-me")
         response = client.get(f"/prayers/{guild_id}", headers={"authorization": f"Bearer {token}"})
         assert response.status_code == 200
-        assert "Prayer Schedule" in response.text
         assert guild_id in response.text
+        assert "Schedule · Prayer Bot" in response.text
 
         # Test public GET
         response_pub = client.get(f"/prayers/public/{guild_id}")
         assert response_pub.status_code == 200
+        assert guild_id in response_pub.text
         assert "Prayer Schedule" in response_pub.text
 
         # Test POST save

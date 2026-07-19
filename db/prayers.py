@@ -54,8 +54,9 @@ def upsert_schedule(
     db.execute("""
         INSERT INTO prayer_schedules (guild_id, day_of_week, prayer_type, time_utc, enabled)
         VALUES (?, ?, ?, ?, ?)
-        ON CONFLICT(guild_id, day_of_week, prayer_type, time_utc) DO UPDATE SET
-            enabled = excluded.enabled
+        ON CONFLICT(guild_id, day_of_week, time_utc) DO UPDATE SET
+            enabled = excluded.enabled,
+            prayer_type = excluded.prayer_type
     """, (guild_id, day, prayer_type.value, t_utc.isoformat(), int(enabled)))
     row = db.fetchone(
         "SELECT id FROM prayer_schedules WHERE guild_id=? AND day_of_week=? AND prayer_type=? AND time_utc=?",
