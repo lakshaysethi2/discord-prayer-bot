@@ -2,10 +2,24 @@
 {% block title %}{{ guild_name }} · Prayer Bot{% endblock %}
 
 {% block content %}
-<div class="text-center mb-8">
+<div class="text-center mb-6">
   <h1 class="text-2xl font-bold">🕌 {{ guild_name }}</h1>
   <p class="text-slate-400 text-sm">Prayer Schedule</p>
 </div>
+
+{% if next_prayer %}
+{% set emojis = {"buddhist": "☸️", "christian": "✝️", "jewish": "✡️", "sufi": "☪️", "vedantic": "🕉️", "three_daily": "🌅"} %}
+{% set labels = {"buddhist": "Buddhist", "christian": "Christian", "jewish": "Jewish", "sufi": "Sufi", "vedantic": "Vedantic", "three_daily": "Three Daily"} %}
+<div class="rounded-xl bg-gradient-to-r from-indigo-900/60 to-purple-900/60 border border-indigo-700/50 p-5 mb-6 text-center">
+  <div class="text-xs text-indigo-300 uppercase tracking-wider mb-1">Next Prayer</div>
+  <div class="text-2xl mb-1">{{ emojis.get(next_prayer.prayer_type, "🕌") }} {{ labels.get(next_prayer.prayer_type, next_prayer.prayer_type | title) }}</div>
+  <div class="text-sm text-slate-300">{{ next_prayer.day_name }} · <span class="local-time-next" data-utc="{{ next_prayer.time_utc }}">--:--</span> UTC</div>
+  <div class="text-xs text-slate-500 mt-1">{{ next_prayer.dt }}</div>
+  <div class="mt-2 inline-block rounded-full bg-indigo-800/60 px-4 py-1 text-sm font-medium text-indigo-200">
+    in {% if next_prayer.in_hours > 0 %}{{ next_prayer.in_hours }}h {% endif %}{{ next_prayer.in_minutes }}m
+  </div>
+</div>
+{% endif %}
 
 {% if all_guilds|length > 1 %}
 <div class="mb-6">
@@ -55,12 +69,19 @@ const offset = -(new Date().getTimezoneOffset()) / 60;
 const sign = offset >= 0 ? '+' : '';
 document.getElementById('tz-badge').textContent = '🕐 ' + tz + ' (UTC' + sign + offset.toFixed(1) + 'h)';
 
-document.querySelectorAll('[data-utc-time]').forEach(card => {
-    const [h, m] = card.dataset.utcTime.split(':').map(Number);
+function utcToLocal(utcTimeStr) {
+    const [h, m] = utcTimeStr.split(':').map(Number);
     const d = new Date(Date.UTC(2024, 0, 1, h, m));
-    const lh = String(d.getHours()).padStart(2, '0');
-    const lm = String(d.getMinutes()).padStart(2, '0');
-    card.querySelector('.local-time').textContent = lh + ':' + lm;
+    return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+}
+
+document.querySelectorAll('[data-utc-time]').forEach(card => {
+    card.querySelector('.local-time').textContent = utcToLocal(card.dataset.utcTime);
 });
+
+const nextEl = document.querySelector('.local-time-next');
+if (nextEl) {
+    nextEl.textContent = utcToLocal(nextEl.dataset.utc);
+}
 </script>
 {% endblock %}
