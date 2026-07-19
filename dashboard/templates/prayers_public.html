@@ -46,8 +46,13 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!timeStr) return;
         const [h, m] = timeStr.split(':').map(Number);
         const now = new Date();
-        const d = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m);
-        el.textContent = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZone: tz });
+        // Build in user's local time to avoid UTC/day-shift issues
+        const d = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate(), h, m));
+        // Convert UTC time to local display
+        const localH = d.getHours();
+        const localM = d.getMinutes();
+        const display = new Date(now.getFullYear(), now.getMonth(), now.getDate(), localH, localM);
+        el.textContent = display.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZone: tz });
     });
 });
 </script>

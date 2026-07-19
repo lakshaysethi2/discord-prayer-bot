@@ -53,6 +53,7 @@ class PrayerScheduler:
             await asyncio.sleep(60)  # check every minute
 
     async def _check_and_play(self):
+        # Database times are stored as naive HH:MM; interpret them in scheduler timezone
         now = datetime.now(self.timezone)
         weekday = now.weekday()          # 0=Mon ... 6=Sun
         current_time = now.time().replace(second=0, microsecond=0)

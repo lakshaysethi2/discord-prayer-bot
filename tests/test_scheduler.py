@@ -24,3 +24,4 @@ def test_scheduler_mock_playback():
 
         scheduler = PrayerScheduler(db, mock_play, guild_id)
         assert scheduler._running is False
+        assert scheduler.timezone is not None
