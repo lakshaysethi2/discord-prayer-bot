@@ -4,6 +4,10 @@ All notable changes to the Discord Prayer Bot.
 
 ## [Unreleased]
 
+### Fixed
+- `upsert_schedule` ON CONFLICT target now matches schema constraint (`guild_id, day_of_week, time_utc`) instead of referencing `prayer_type`
+- Test assertion in `test_routes.py` updated to match actual template output
+
 ### Added
 - Guild name display on schedule and public pages (instead of raw ID)
 - Guild dropdown selector on schedule and public pages for multi-guild
