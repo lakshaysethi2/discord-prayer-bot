@@ -121,16 +121,20 @@ async def prayers_admin(
         existing = get_weekly_schedule(db, guild_id)
 
     cfg = get_guild_config(db, guild_id)
-    timezone_offset_hours = cfg.timezone_offset_hours if cfg else 0.0
+
+    # Get all guilds for the dropdown
+    guild_rows = db.fetchall("SELECT guild_id, guild_name FROM guild_configs ORDER BY guild_name, guild_id")
+    all_guilds = [{"guild_id": r["guild_id"], "name": r["guild_name"] or r["guild_id"]} for r in guild_rows]
+    current_guild_name = cfg.guild_name if cfg else guild_id
 
     return templates.TemplateResponse(
         request,
         "prayers_admin.html",
         {
             "guild_id": guild_id,
+            "guild_name": current_guild_name,
+            "all_guilds": all_guilds,
             "schedules": existing,
-            "timezone_offset_hours": timezone_offset_hours,
-            "timezone_note": f"Times stored in UTC. Guild offset: {timezone_offset_hours:+.1f}h",
             "get_audio_filename": get_audio_filename,
         },
     )
@@ -189,7 +193,11 @@ async def prayers_public(
 ):
     schedules = get_weekly_schedule(db, guild_id)
     cfg = get_guild_config(db, guild_id)
-    timezone_offset_hours = cfg.timezone_offset_hours if cfg else 0.0
+
+    # Get all guilds for dropdown
+    guild_rows = db.fetchall("SELECT guild_id, guild_name FROM guild_configs ORDER BY guild_name, guild_id")
+    all_guilds = [{"guild_id": r["guild_id"], "name": r["guild_name"] or r["guild_id"]} for r in guild_rows]
+    current_guild_name = cfg.guild_name if cfg else guild_id
 
     # Build rows with local time conversion
     rows = []
@@ -206,9 +214,9 @@ async def prayers_public(
         "prayers_public.html",
         {
             "guild_id": guild_id,
+            "guild_name": current_guild_name,
+            "all_guilds": all_guilds,
             "rows": rows,
-            "timezone_offset_hours": timezone_offset_hours,
-            "timezone_display": f"UTC {timezone_offset_hours:+.1f}h (guild config)",
         },
     )
 
