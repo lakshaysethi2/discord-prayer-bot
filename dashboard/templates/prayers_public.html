@@ -13,7 +13,7 @@
 </head>
 <body>
 <h1>Prayer Schedule (Guild: {{ guild_id }})</h1>
-<p class="timezone-note">Times shown below are viewed in your local timezone (<span id="user-tz"></span>).</p>
+<p class="timezone-note">Times shown below are in <strong>UTC</strong> (base storage). Guild timezone offset: <strong>{{ timezone_display }}</strong>. Per-guild offset converts to local time.</p>
 
 <table>
     <tr>
@@ -22,17 +22,18 @@
         <th>Scheduled Time</th>
         <th>Status</th>
     </tr>
-    {% for sched in schedules %}
+    {% for row in rows %}
     <tr>
         <td>
             {% set days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] %}
-            {{ days[sched.day_of_week] }}
+            {{ days[row.schedule.day_of_week] }}
         </td>
-        <td>{{ sched.prayer_type.value | title }}</td>
+        <td>{{ row.schedule.prayer_type.value | title }}</td>
         <td>
-            <span class="prayer-time" data-time="{{ sched.time }}">{{ sched.time }}</span>
+            <strong>Local:</strong> {{ row.local_time }}<br>
+            <small>UTC: {{ row.schedule.time_utc }}</small>
         </td>
-        <td>{% if sched.enabled %}Active{% else %}Disabled{% endif %}</td>
+        <td>{% if row.schedule.enabled %}Active{% else %}Disabled{% endif %}</td>
     </tr>
     {% endfor %}
 </table>

@@ -22,8 +22,10 @@ def test_admin_and_public_routes(monkeypatch):
         from dashboard.prayers_routes import get_db
         app.dependency_overrides[get_db] = override_get_db
 
-        # Test admin GET
-        response = client.get(f"/prayers/{guild_id}")
+        # Test admin GET (with auth token)
+        import os
+        token = os.environ.get("ADMIN_TOKEN", "dev-token-change-me")
+        response = client.get(f"/prayers/{guild_id}", headers={"authorization": f"Bearer {token}"})
         assert response.status_code == 200
         assert "Prayer Schedule" in response.text
         assert guild_id in response.text
@@ -38,6 +40,7 @@ def test_admin_and_public_routes(monkeypatch):
         sched_id = schedules[0]["id"]
         response_post = client.post(
             "/prayers/save",
+            headers={"authorization": f"Bearer {token}"},
             data={
                 "guild_id": guild_id,
                 f"time_{sched_id}": "09:00",
