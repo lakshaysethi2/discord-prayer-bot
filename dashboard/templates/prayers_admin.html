@@ -2,7 +2,6 @@
 {% block title %}Schedule · Prayer Bot{% endblock %}
 
 {% block content %}
-<meta name="viewport" content="width=device-width, initial-scale=1">
 <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.css" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.js"></script>
 
@@ -24,79 +23,72 @@
   </div>
 </div>
 
-<div class="text-xs text-slate-500 mb-4">🕐 <span id="tz-info">detecting...</span> — times entered in your local time, saved as UTC</div>
-
+<div class="text-xs text-slate-500 mb-4">🕐 <span id="tz-info">detecting...</span> — all times shown in your local timezone</div>
 <div id="feedback" class="hidden rounded px-3 py-2 text-sm mb-3"></div>
-
-<div class="flex flex-wrap gap-2 mb-4">
-  <button onclick="enableAll(true)" class="rounded bg-slate-800 hover:bg-slate-700 px-3 py-1 text-xs">✓ Enable All</button>
-  <button onclick="enableAll(false)" class="rounded bg-slate-800 hover:bg-slate-700 px-3 py-1 text-xs">✗ Disable All</button>
-  <button onclick="setAllTimes('06:00')" class="rounded bg-slate-800 hover:bg-slate-700 px-3 py-1 text-xs">🕕 06:00</button>
-  <button onclick="setAllTimes('12:00')" class="rounded bg-slate-800 hover:bg-slate-700 px-3 py-1 text-xs">🕛 12:00</button>
-  <button onclick="setAllTimes('18:00')" class="rounded bg-slate-800 hover:bg-slate-700 px-3 py-1 text-xs">🕕 18:00</button>
-</div>
 
 <form method="post" action="/prayers/save" id="schedule-form">
   <input type="hidden" name="guild_id" value="{{ guild_id }}">
-  <div class="overflow-x-auto rounded-lg border border-slate-800">
-    <table class="w-full text-sm">
-      <thead class="bg-slate-800">
-        <tr><th class="p-2 text-left text-xs uppercase text-slate-400">Day</th><th class="p-2 text-left text-xs uppercase text-slate-400">Prayer</th><th class="p-2 text-left text-xs uppercase text-slate-400">Time (local)</th><th class="p-2 text-left text-xs uppercase text-slate-400">≡ UTC</th><th class="p-2 text-center text-xs uppercase text-slate-400">On</th><th class="p-2"></th></tr>
-      </thead>
-      <tbody>
-        {% set days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] %}
-        {% set prev_day = -1 %}
-        {% for sched in schedules %}
-        {% if sched.day_of_week != prev_day %}
-        <tr class="bg-slate-800/50"><td colspan="6" class="p-2 font-semibold text-slate-300">{{ days[sched.day_of_week] }}</td></tr>
-        {% set prev_day = sched.day_of_week %}{% endif %}
-        <tr class="border-b border-slate-800/50 hover:bg-slate-900/50" data-utc-time="{{ sched.time_utc }}">
-          <td class="p-2"></td>
-          <td class="p-2">{{ sched.prayer_type.value | title }}</td>
-          <td class="p-2"><input type="time" name="time_{{ sched.id }}" class="local-time-input bg-slate-800 border border-slate-700 rounded px-2 py-1 text-sm w-24" value="{{ sched.time_utc }}" data-id="{{ sched.id }}" onchange="updateUtc(this)"></td>
-          <td class="p-2"><span class="utc-display text-slate-400 text-xs" id="utc-{{ sched.id }}">{{ sched.time_utc }}</span></td>
-          <td class="p-2 text-center"><input type="checkbox" name="enabled_{{ sched.id }}" {% if sched.enabled %}checked{% endif %} class="h-4 w-4"></td>
-          <td class="p-2"><button type="button" onclick="playNow(this, '{{ sched.prayer_type.value }}', '{{ get_audio_filename(sched.prayer_type) }}')" class="rounded bg-emerald-700 hover:bg-emerald-600 px-2 py-0.5 text-xs">▶ Play</button></td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+    {% set days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] %}
+    {% set emojis = {"buddhist": "☸️", "christian": "✝️", "jewish": "✡️", "sufi": "☪️", "vedantic": "🕉️", "three_daily": "🌅"} %}
+    {% for day_idx in range(7) %}
+    <div class="rounded-lg bg-slate-900 border border-slate-800 p-3">
+      <div class="text-sm font-semibold text-slate-300 mb-2">{{ days[day_idx] }}</div>
+      {% for sched in schedules %}
+      {% if sched.day_of_week == day_idx %}
+      <div class="flex items-center gap-2 py-1 border-b border-slate-800/50 last:border-0">
+        <span class="text-sm w-5 text-center">{{ emojis.get(sched.prayer_type.value, "🙏") }}</span>
+        <span class="flex-1 text-xs text-slate-400 truncate">{{ sched.prayer_type.value | title }}</span>
+        <input type="time" name="time_{{ sched.id }}" class="time-inp bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs w-20 text-right"
+               value="{{ sched.time_utc }}" data-id="{{ sched.id }}" data-utc="{{ sched.time_utc }}">
+        <input type="checkbox" name="enabled_{{ sched.id }}" {% if sched.enabled %}checked{% endif %}
+               class="h-3.5 w-3.5">
+        <button type="button" onclick="playNow(this, '{{ sched.prayer_type.value }}', '{{ get_audio_filename(sched.prayer_type) }}')"
+                class="text-emerald-500 hover:text-emerald-400 text-xs" title="Play Now">▶</button>
+      </div>
+      {% endif %}
+      {% endfor %}
+    </div>
+    {% endfor %}
   </div>
-  <button type="submit" class="mt-4 w-full rounded bg-indigo-600 hover:bg-indigo-500 py-2 text-sm font-medium">Save Schedule</button>
+
+  <div class="flex flex-wrap gap-2 mb-4">
+    <button type="button" onclick="quickSet('enable')" class="rounded bg-slate-800 hover:bg-slate-700 px-3 py-1 text-xs">✓ Enable All</button>
+    <button type="button" onclick="quickSet('disable')" class="rounded bg-slate-800 hover:bg-slate-700 px-3 py-1 text-xs">✗ Disable All</button>
+    <span class="text-slate-600 mx-1">|</span>
+    <button type="button" onclick="setAllTimes('06:00')" class="rounded bg-slate-800 hover:bg-slate-700 px-3 py-1 text-xs">🕕 06:00</button>
+    <button type="button" onclick="setAllTimes('12:00')" class="rounded bg-slate-800 hover:bg-slate-700 px-3 py-1 text-xs">🕛 12:00</button>
+    <button type="button" onclick="setAllTimes('18:00')" class="rounded bg-slate-800 hover:bg-slate-700 px-3 py-1 text-xs">🌇 18:00</button>
+  </div>
+
+  <button type="submit" class="w-full rounded bg-indigo-600 hover:bg-indigo-500 py-3 text-sm font-medium">Save All Changes</button>
 </form>
 
-<div class="mt-6 rounded-lg bg-slate-900 border border-slate-800 p-4">
-  <div id="calendar"></div>
-</div>
+<details class="mt-6">
+  <summary class="text-sm text-slate-400 cursor-pointer hover:text-slate-300">📅 Calendar view</summary>
+  <div class="mt-3 rounded-lg bg-slate-900 border border-slate-800 p-4">
+    <div id="calendar"></div>
+  </div>
+</details>
 
 <script>
-// Timezone init
+// Timezone
 const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
 const off = -(new Date().getTimezoneOffset()) / 60;
 document.getElementById('tz-info').textContent = tz + ' (UTC' + (off>=0?'+':'') + off.toFixed(1) + 'h)';
 
-document.querySelectorAll('[data-utc-time]').forEach(row => {
-  const [h,m] = row.dataset.utcTime.split(':').map(Number);
-  const utc = new Date(Date.UTC(2024,0,1,h,m));
-  const lh = String(utc.getHours()).padStart(2,'0');
-  const lm = String(utc.getMinutes()).padStart(2,'0');
-  const inp = row.querySelector('.local-time-input');
-  if (inp && inp.value === row.dataset.utcTime) inp.value = lh + ':' + lm;
+// Init: convert UTC → local
+document.querySelectorAll('.time-inp').forEach(inp => {
+  const [h,m] = inp.dataset.utc.split(':').map(Number);
+  const d = new Date(Date.UTC(2024,0,1,h,m));
+  inp.value = String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
 });
 
-function updateUtc(inp) {
-  if (!inp.value) return;
-  const [h,m] = inp.value.split(':').map(Number);
-  const d = new Date(); d.setHours(h,m,0,0);
-  const uh = String(d.getUTCHours()).padStart(2,'0');
-  const um = String(d.getUTCMinutes()).padStart(2,'0');
-  const disp = document.getElementById('utc-' + inp.dataset.id);
-  if (disp) disp.textContent = uh + ':' + um;
-}
-
+// Submit: convert local → UTC
 document.getElementById('schedule-form').addEventListener('submit', function(e) {
   e.preventDefault();
-  document.querySelectorAll('.local-time-input').forEach(inp => {
+  document.querySelectorAll('.time-inp').forEach(inp => {
     if (!inp.value) return;
     const [h,m] = inp.value.split(':').map(Number);
     const d = new Date(); d.setHours(h,m,0,0);
@@ -105,11 +97,15 @@ document.getElementById('schedule-form').addEventListener('submit', function(e) 
   this.submit();
 });
 
-function enableAll(val) { document.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = val); }
-function setAllTimes(t) { document.querySelectorAll('.local-time-input').forEach(inp => { inp.value = t; updateUtc(inp); }); }
+function quickSet(action) {
+  document.querySelectorAll('input[type="checkbox"]').forEach(cb => { cb.checked = action === 'enable'; });
+}
+function setAllTimes(t) {
+  document.querySelectorAll('.time-inp').forEach(inp => { inp.value = t; });
+}
 
 async function playNow(btn, prayerType, filename) {
-  btn.textContent = '...'; btn.disabled = true;
+  btn.textContent = '⋯'; btn.disabled = true;
   const fb = document.getElementById('feedback');
   try {
     await fetch('/prayers/adhoc', {
@@ -117,14 +113,14 @@ async function playNow(btn, prayerType, filename) {
       headers: {'Content-Type': 'application/x-www-form-urlencoded'},
       body: new URLSearchParams({guild_id:'{{ guild_id }}',prayer_type:prayerType,filename})
     });
-    fb.textContent = '✅ ' + prayerType + ' prayer queued — playing in a few seconds';
+    fb.textContent = '✅ ' + prayerType + ' prayer queued';
     fb.className = 'rounded bg-emerald-900/40 border border-emerald-700 px-3 py-2 text-sm text-emerald-200 mb-3';
   } catch(e) {
-    fb.textContent = '❌ Failed to queue prayer';
+    fb.textContent = '❌ Failed';
     fb.className = 'rounded bg-red-900/40 border border-red-700 px-3 py-2 text-sm text-red-200 mb-3';
   }
-  btn.textContent = '▶ Play'; btn.disabled = false;
-  setTimeout(() => fb.className = 'hidden', 4000);
+  btn.textContent = '▶'; btn.disabled = false;
+  setTimeout(() => fb.className = 'hidden', 3000);
 }
 
 // Calendar
