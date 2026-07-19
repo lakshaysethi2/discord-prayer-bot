@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Prayer Schedule - Admin</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.js"></script>
+</head>
+<body>
+<h1>Prayer Schedule (Guild: {{ guild_id }})</h1>
+
+<form method="post" action="/prayers/save">
+    <input type="hidden" name="guild_id" value="{{ guild_id }}">
+    <table>
+        <tr>
+            <th>Day</th>
+            <th>Prayer</th>
+            <th>Time (HH:MM)</th>
+            <th>Enabled</th>
+        </tr>
+        {% for sched in schedules %}
+        <tr>
+            <td>{{ sched.day_of_week }}</td>
+            <td>{{ sched.prayer_type }}</td>
+            <td><input type="time" name="time_{{ sched.id }}" value="{{ sched.time }}"></td>
+            <td><input type="checkbox" name="enabled_{{ sched.id }}" {% if sched.enabled %}checked{% endif %}></td>
+        </tr>
+        {% endfor %}
+    </table>
+    <button type="submit">Save Schedule</button>
+</form>
+
+<h2>Calendar View</h2>
+<div id="calendar"></div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  var calendarEl = document.getElementById('calendar');
+  var calendar = new FullCalendar.Calendar(calendarEl, {
+    initialView: 'dayGridMonth',
+    events: {{ calendar_events|tojson }}
+  });
+  calendar.render();
+});
+</script>
+</body>
+</html>
