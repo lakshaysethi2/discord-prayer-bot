@@ -271,6 +271,38 @@ async def prayers_public(
                 "schedules": [{"schedule": s} for s in day_schedules],
             })
 
+    # Compute next upcoming prayer
+    import pytz
+    from datetime import datetime, timedelta
+    utc_now = datetime.now(pytz.UTC)
+    current_weekday = utc_now.weekday()  # 0=Mon
+    current_time = utc_now.time().replace(second=0, microsecond=0)
+    next_prayer = None
+    if enabled_schedules:
+        best_sched = None
+        best_dt = None
+        for s in enabled_schedules:
+            days_ahead = (s.day_of_week - current_weekday) % 7
+            if days_ahead == 0 and s.time_utc <= current_time:
+                days_ahead = 7
+            prayer_dt = utc_now.replace(hour=s.time_utc.hour, minute=s.time_utc.minute, second=0, microsecond=0) + timedelta(days=days_ahead)
+            if best_dt is None or prayer_dt < best_dt:
+                best_dt = prayer_dt
+                best_sched = s
+        if best_sched and best_dt:
+            delta = best_dt - utc_now
+            total_secs = int(delta.total_seconds())
+            hours, remainder = divmod(total_secs, 3600)
+            minutes = remainder // 60
+            next_prayer = {
+                "prayer_type": best_sched.prayer_type.value,
+                "day_name": days_list[best_sched.day_of_week],
+                "time_utc": best_sched.time_utc,
+                "dt": best_dt.strftime("%a %d %b %Y"),
+                "in_hours": hours,
+                "in_minutes": minutes,
+            }
+
     return templates.TemplateResponse(
         request,
         "prayers_public.html",
@@ -279,6 +311,7 @@ async def prayers_public(
             "guild_name": current_guild_name,
             "all_guilds": all_guilds,
             "schedules_by_day": schedules_by_day,
+            "next_prayer": next_prayer,
             "voice_channel_id": cfg.voice_channel_id if cfg else "",
         },
     )
