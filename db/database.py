@@ -92,9 +92,11 @@ class Database:
             try:
                 for stmt in SCHEMA:
                     cur.execute(stmt)
-                # Prayer schedules
-                from db.prayers import create_prayer_schedules_table
-                create_prayer_schedules_table(self)
+                # Backfill: add timezone_offset_hours to guild_configs if missing
+                self._ensure_column(cur, "guild_configs", "timezone_offset_hours", "REAL DEFAULT 0.0")
+                # Backfill: add guild_id to watch_sessions if missing
+                self._ensure_column(cur, "watch_sessions", "guild_id", "TEXT NOT NULL DEFAULT ''")
+                self._ensure_column(cur, "guild_channels", "parent_id", "TEXT")
             finally:
                 cur.close()
 

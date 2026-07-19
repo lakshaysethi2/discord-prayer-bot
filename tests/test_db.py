@@ -26,14 +26,14 @@ def test_database_and_crud():
         schedules = get_weekly_schedule(db, guild_id)
         assert len(schedules) == 1
         assert schedules[0].prayer_type == PrayerType.BUDDHIST
-        assert schedules[0].time == t
+        assert schedules[0].time_utc == t
         assert schedules[0].enabled is True
 
         # Update schedule
         new_time = time(13, 30)
         update_schedule(db, schedules[0].id, new_time, enabled=False)
         schedules_updated = get_weekly_schedule(db, guild_id)
-        assert schedules_updated[0].time == new_time
+        assert schedules_updated[0].time_utc == new_time
         assert schedules_updated[0].enabled is False
 
         # Log prayer played
