@@ -199,15 +199,8 @@ async def prayers_public(
     all_guilds = [{"guild_id": r["guild_id"], "name": r["guild_name"] or r["guild_id"]} for r in guild_rows]
     current_guild_name = cfg.guild_name if cfg else guild_id
 
-    # Build rows with local time conversion
-    rows = []
-    for s in schedules:
-        local_time_str = _format_time_local(s.time_utc, timezone_offset_hours)
-        rows.append({
-            "schedule": s,
-            "local_time": local_time_str,
-            "timezone_offset_hours": timezone_offset_hours,
-        })
+    # Build rows (browser handles UTC → local conversion)
+    rows = [{"schedule": s} for s in schedules]
 
     return templates.TemplateResponse(
         request,
