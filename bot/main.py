@@ -348,7 +348,7 @@ class PrayerBot(discord.Client):
                 vol = await player.set_volume(vol)
                 return f"ok:volume:{vol}"
             # Set global state even without player
-            self.bot_state.stream_volume_percent = min(250, max(50, vol))
+            self.bot_state.stream_volume_percent = min(450, max(50, vol))
             return "ok:volume_saved"
 
         elif command == "refresh_playlist":

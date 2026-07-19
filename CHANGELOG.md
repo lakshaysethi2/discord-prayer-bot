@@ -26,6 +26,9 @@ All notable changes to the Discord Prayer Bot.
 - Admin prayer page seeds all 42 slots (6 prayers × 7 days) on first visit
 - Auth uses cookie (`prayer_session`) for form submissions
 - `bot/main.py` migrated from stub to full Discord bot (PrayerBot class)
+- UI redesigned with Tailwind CSS dark theme (matching discord-radio style)
+- All templates now extend `base.html` with consistent nav and styling
+- Controls routes (`/controls`, `/controls/volume`) return JSON for AJAX fetch
 
 ### Fixed
 - `bot/player_framework.py` import: `bot.state` → `bot.state_framework`
@@ -38,8 +41,12 @@ All notable changes to the Discord Prayer Bot.
 - Auth added to `/servers/update` endpoint
 - `discord.py[voice]` in requirements for voice support
 - `PYTHONPATH=/app` in docker-compose for module resolution
-- `ffmpeg` installed in Docker image for audio playback
+- `ffmpeg` and `libopus0` installed in Docker image for audio playback
 - `voice_clients` name collision with `discord.Client` property
+- Voice connection timeout on production: missing `libopus0`, stale dashboard commands replayed on restart, missing `reconnect=True`/`timeout=30.0` matching discord-radio
+- Volume slider: now uses JS fetch for instant UI update (was form POST redirect showing stale value)
+- Volume range increased from 50–250 to 50–450
+- Duplicate skip/pause/resume buttons removed; now one per enabled guild with server name
 
 ### Dependencies
 - `discord.py[voice]>=2.3.0`

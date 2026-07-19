@@ -33,7 +33,7 @@ def test_admin_and_public_routes(monkeypatch):
         # Test public GET
         response_pub = client.get(f"/prayers/public/{guild_id}")
         assert response_pub.status_code == 200
-        assert "Public View" in response_pub.text
+        assert "Prayer Schedule" in response_pub.text
 
         # Test POST save
         schedules = db.fetchall("SELECT id FROM prayer_schedules WHERE guild_id = ?", (guild_id,))

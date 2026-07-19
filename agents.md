@@ -9,7 +9,11 @@
 ## Coding Agents
 - **arena-ai-coding-agent** (primary): Implemented bot core, DB, dashboard, PR framework, and post-PR fixes.
 - **arena-agent** (co-author): Assisted with code review and branch management.
-- **pi** (e2e/integration): Fixed PR #5 integration issues, wired Discord bot, added timezone browser detection, voice on-demand behavior, ad-hoc playback, landing page, navigation, login flow, CHANGELOG.md, and comprehensive timezone tests.
+- **pi** (e2e/integration): Fixed PR #5 integration issues, wired Discord bot, added timezone browser detection, voice on-demand behavior, ad-hoc playback, landing page, navigation, login flow, CHANGELOG.md, voice fix (libopus0 + stale commands), volume controls, Tailwind dark theme UI redesign.
+
+## Agent Rules
+
+- **Update CHANGELOG.md before every `git commit` and `git push`.** All agents must add entries to the [Unreleased] section summarizing changes made in the current session.
 
 ## Bot Components
 

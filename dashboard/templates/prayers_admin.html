@@ -1,198 +1,146 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Prayer Schedule — Admin</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.css" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.js"></script>
-    <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f3f0; color: #3d3226; }
-        .nav { display: flex; gap: 4px; padding: 8px 16px; background: #fff; border-bottom: 1px solid #eee; overflow-x: auto; }
-        .nav a { padding: 6px 14px; border-radius: 6px; text-decoration: none; font-size: 13px; color: #666; white-space: nowrap; }
-        .nav a.active { background: #3d3226; color: #fff; }
-        .nav a:hover:not(.active) { background: #f0f0f0; }
-        .container { max-width: 800px; margin: 0 auto; padding: 16px; }
+{% extends "base.html" %}
+{% block title %}Schedule · Prayer Bot{% endblock %}
 
-        .guild-bar { display: flex; gap: 8px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
-        .guild-bar select { padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; background: #fff; }
-        .guild-bar h2 { font-size: 1.2em; }
+{% block content %}
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.js"></script>
 
-        .quick-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }
-        .quick-actions button { padding: 6px 12px; border: 1px solid #ddd; border-radius: 16px; background: #fff; font-size: 12px; cursor: pointer; }
-        .quick-actions button:hover { border-color: #3d3226; }
-
-        .tz-bar { font-size: 13px; color: #888; margin-bottom: 12px; }
-        table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.04); margin-bottom: 16px; }
-        th { background: #3d3226; color: #fff; padding: 10px 12px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
-        td { padding: 8px 12px; border-bottom: 1px solid #f0f0f0; font-size: 14px; }
-        tr:last-child td { border-bottom: none; }
-        input[type="time"] { border: 1px solid #ddd; border-radius: 4px; padding: 4px 8px; font-size: 13px; width: 100px; }
-        input[type="checkbox"] { width: 18px; height: 18px; cursor: pointer; }
-        .btn { padding: 6px 14px; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500; }
-        .btn-save { background: #3d3226; color: #fff; width: 100%; padding: 12px; font-size: 15px; }
-        .btn-save:hover { background: #5b4a3f; }
-        .btn-play { background: #27ae60; color: #fff; padding: 4px 12px; border: none; border-radius: 12px; font-size: 12px; cursor: pointer; }
-        .btn-play:hover { background: #2ecc71; }
-        .btn-play.playing { background: #e67e22; }
-        .feedback { padding: 8px 14px; border-radius: 6px; margin: 8px 0; font-size: 13px; display: none; }
-        .feedback.show { display: block; }
-        .feedback.ok { background: #d4edda; color: #155724; }
-        .feedback.err { background: #f8d7da; color: #721c24; }
-
-        .day-header { background: #f8f6f3; font-weight: 700; font-size: 13px; color: #5b4a3f; }
-        .calendar-wrap { background: #fff; border-radius: 10px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); margin-bottom: 16px; }
-        #calendar { max-width: 100%; }
-
-        @media (max-width: 600px) {
-            td, th { padding: 6px 4px; font-size: 11px; }
-            input[type="time"] { width: 72px; font-size: 11px; }
-            .btn-play { padding: 2px 8px; font-size: 10px; }
-            .container { padding: 8px; }
-        }
-    </style>
-</head>
-<body>
-<div class="nav">
-    <a href="/">Home</a>
-    <a href="/servers">Servers</a>
-    <a href="/prayers/{{ guild_id }}" class="active">Schedule</a>
-    <a href="/prayers/public/{{ guild_id }}">Public</a>
+<div class="flex items-center justify-between mb-4 flex-wrap gap-2">
+  <div class="flex items-center gap-3">
+    <h1 class="text-xl font-semibold">{{ guild_name }}</h1>
+    {% if all_guilds|length > 1 %}
+    <select onchange="if(this.value) window.location.href='/prayers/' + this.value"
+            class="rounded bg-slate-800 border border-slate-700 px-2 py-1 text-sm">
+      {% for g in all_guilds %}
+      <option value="{{ g.guild_id }}" {% if g.guild_id == guild_id %}selected{% endif %}>{{ g.name }}</option>
+      {% endfor %}
+    </select>
+    {% endif %}
+  </div>
+  <div class="flex gap-2 text-xs">
+    <a href="/servers" class="text-slate-400 hover:text-white">⚙️ Servers</a>
+    <a href="/prayers/public/{{ guild_id }}" class="text-slate-400 hover:text-white">👁 Public</a>
+  </div>
 </div>
 
-<div class="container">
-    <div class="guild-bar">
-        <h2>{{ guild_name }}</h2>
-        {% if all_guilds|length > 1 %}
-        <select onchange="if(this.value) window.location.href='/prayers/' + this.value">
-            {% for g in all_guilds %}
-            <option value="{{ g.guild_id }}" {% if g.guild_id == guild_id %}selected{% endif %}>{{ g.name }}</option>
-            {% endfor %}
-        </select>
-        {% endif %}
-    </div>
+<div class="text-xs text-slate-500 mb-4">🕐 <span id="tz-info">detecting...</span> — times entered in your local time, saved as UTC</div>
 
-    <div class="tz-bar">🕐 <span id="tz-info">detecting...</span> — times entered in your local time, saved as UTC</div>
+<div id="feedback" class="hidden rounded px-3 py-2 text-sm mb-3"></div>
 
-    <div id="feedback" class="feedback"></div>
+<div class="flex flex-wrap gap-2 mb-4">
+  <button onclick="enableAll(true)" class="rounded bg-slate-800 hover:bg-slate-700 px-3 py-1 text-xs">✓ Enable All</button>
+  <button onclick="enableAll(false)" class="rounded bg-slate-800 hover:bg-slate-700 px-3 py-1 text-xs">✗ Disable All</button>
+  <button onclick="setAllTimes('06:00')" class="rounded bg-slate-800 hover:bg-slate-700 px-3 py-1 text-xs">🕕 06:00</button>
+  <button onclick="setAllTimes('12:00')" class="rounded bg-slate-800 hover:bg-slate-700 px-3 py-1 text-xs">🕛 12:00</button>
+  <button onclick="setAllTimes('18:00')" class="rounded bg-slate-800 hover:bg-slate-700 px-3 py-1 text-xs">🕕 18:00</button>
+</div>
 
-    <div class="quick-actions">
-        <button onclick="enableAll(true)">✓ Enable All</button>
-        <button onclick="enableAll(false)">✗ Disable All</button>
-        <button onclick="setAllTimes('06:00')">🕕 Set All 06:00</button>
-        <button onclick="setAllTimes('12:00')">🕛 Set All 12:00</button>
-        <button onclick="setAllTimes('18:00')">🕕 Set All 18:00</button>
-    </div>
+<form method="post" action="/prayers/save" id="schedule-form">
+  <input type="hidden" name="guild_id" value="{{ guild_id }}">
+  <div class="overflow-x-auto rounded-lg border border-slate-800">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-800">
+        <tr><th class="p-2 text-left text-xs uppercase text-slate-400">Day</th><th class="p-2 text-left text-xs uppercase text-slate-400">Prayer</th><th class="p-2 text-left text-xs uppercase text-slate-400">Time (local)</th><th class="p-2 text-left text-xs uppercase text-slate-400">≡ UTC</th><th class="p-2 text-center text-xs uppercase text-slate-400">On</th><th class="p-2"></th></tr>
+      </thead>
+      <tbody>
+        {% set days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] %}
+        {% set prev_day = -1 %}
+        {% for sched in schedules %}
+        {% if sched.day_of_week != prev_day %}
+        <tr class="bg-slate-800/50"><td colspan="6" class="p-2 font-semibold text-slate-300">{{ days[sched.day_of_week] }}</td></tr>
+        {% set prev_day = sched.day_of_week %}{% endif %}
+        <tr class="border-b border-slate-800/50 hover:bg-slate-900/50" data-utc-time="{{ sched.time_utc }}">
+          <td class="p-2"></td>
+          <td class="p-2">{{ sched.prayer_type.value | title }}</td>
+          <td class="p-2"><input type="time" name="time_{{ sched.id }}" class="local-time-input bg-slate-800 border border-slate-700 rounded px-2 py-1 text-sm w-24" value="{{ sched.time_utc }}" data-id="{{ sched.id }}" onchange="updateUtc(this)"></td>
+          <td class="p-2"><span class="utc-display text-slate-400 text-xs" id="utc-{{ sched.id }}">{{ sched.time_utc }}</span></td>
+          <td class="p-2 text-center"><input type="checkbox" name="enabled_{{ sched.id }}" {% if sched.enabled %}checked{% endif %} class="h-4 w-4"></td>
+          <td class="p-2"><button type="button" onclick="playNow(this, '{{ sched.prayer_type.value }}', '{{ get_audio_filename(sched.prayer_type) }}')" class="rounded bg-emerald-700 hover:bg-emerald-600 px-2 py-0.5 text-xs">▶ Play</button></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <button type="submit" class="mt-4 w-full rounded bg-indigo-600 hover:bg-indigo-500 py-2 text-sm font-medium">Save Schedule</button>
+</form>
 
-    <form method="post" action="/prayers/save" id="schedule-form">
-        <input type="hidden" name="guild_id" value="{{ guild_id }}">
-        <table>
-            <tr><th>Day</th><th>Prayer</th><th>Time (local)</th><th>≡ UTC</th><th>On</th><th></th></tr>
-            {% set days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] %}
-            {% set prev_day = -1 %}
-            {% for sched in schedules %}
-            {% if sched.day_of_week != prev_day %}<tr class="day-header"><td colspan="6">{{ days[sched.day_of_week] }}</td></tr>{% set prev_day = sched.day_of_week %}{% endif %}
-            <tr data-utc-time="{{ sched.time_utc }}">
-                <td></td>
-                <td>{{ sched.prayer_type.value | title }}</td>
-                <td><input type="time" name="time_{{ sched.id }}" class="local-time-input" value="{{ sched.time_utc }}" data-id="{{ sched.id }}" onchange="updateUtc(this)"></td>
-                <td><span class="utc-display" id="utc-{{ sched.id }}">{{ sched.time_utc }}</span></td>
-                <td><input type="checkbox" name="enabled_{{ sched.id }}" {% if sched.enabled %}checked{% endif %}></td>
-                <td><button type="button" class="btn-play" onclick="playNow(this, '{{ sched.prayer_type.value }}', '{{ get_audio_filename(sched.prayer_type) }}')">▶ Play</button></td>
-            </tr>
-            {% endfor %}
-        </table>
-        <button type="submit" class="btn btn-save">Save Schedule</button>
-    </form>
-
-    <div class="calendar-wrap">
-        <div id="calendar"></div>
-    </div>
+<div class="mt-6 rounded-lg bg-slate-900 border border-slate-800 p-4">
+  <div id="calendar"></div>
 </div>
 
 <script>
-// Timezone
+// Timezone init
 const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
 const off = -(new Date().getTimezoneOffset()) / 60;
 document.getElementById('tz-info').textContent = tz + ' (UTC' + (off>=0?'+':'') + off.toFixed(1) + 'h)';
 
-// Init: convert UTC → local
 document.querySelectorAll('[data-utc-time]').forEach(row => {
-    const [h,m] = row.dataset.utcTime.split(':').map(Number);
-    const utc = new Date(Date.UTC(2024,0,1,h,m));
-    const lh = String(utc.getHours()).padStart(2,'0');
-    const lm = String(utc.getMinutes()).padStart(2,'0');
-    const inp = row.querySelector('.local-time-input');
-    if (inp && inp.value === row.dataset.utcTime) inp.value = lh + ':' + lm;
+  const [h,m] = row.dataset.utcTime.split(':').map(Number);
+  const utc = new Date(Date.UTC(2024,0,1,h,m));
+  const lh = String(utc.getHours()).padStart(2,'0');
+  const lm = String(utc.getMinutes()).padStart(2,'0');
+  const inp = row.querySelector('.local-time-input');
+  if (inp && inp.value === row.dataset.utcTime) inp.value = lh + ':' + lm;
 });
 
 function updateUtc(inp) {
+  if (!inp.value) return;
+  const [h,m] = inp.value.split(':').map(Number);
+  const d = new Date(); d.setHours(h,m,0,0);
+  const uh = String(d.getUTCHours()).padStart(2,'0');
+  const um = String(d.getUTCMinutes()).padStart(2,'0');
+  const disp = document.getElementById('utc-' + inp.dataset.id);
+  if (disp) disp.textContent = uh + ':' + um;
+}
+
+document.getElementById('schedule-form').addEventListener('submit', function(e) {
+  e.preventDefault();
+  document.querySelectorAll('.local-time-input').forEach(inp => {
     if (!inp.value) return;
     const [h,m] = inp.value.split(':').map(Number);
     const d = new Date(); d.setHours(h,m,0,0);
-    const uh = String(d.getUTCHours()).padStart(2,'0');
-    const um = String(d.getUTCMinutes()).padStart(2,'0');
-    const disp = document.getElementById('utc-' + inp.dataset.id);
-    if (disp) disp.textContent = uh + ':' + um;
-}
-
-// Submit: convert local → UTC
-document.getElementById('schedule-form').addEventListener('submit', function(e) {
-    e.preventDefault();
-    document.querySelectorAll('.local-time-input').forEach(inp => {
-        if (!inp.value) return;
-        const [h,m] = inp.value.split(':').map(Number);
-        const d = new Date(); d.setHours(h,m,0,0);
-        inp.value = String(d.getUTCHours()).padStart(2,'0') + ':' + String(d.getUTCMinutes()).padStart(2,'0');
-    });
-    this.submit();
+    inp.value = String(d.getUTCHours()).padStart(2,'0') + ':' + String(d.getUTCMinutes()).padStart(2,'0');
+  });
+  this.submit();
 });
 
-function enableAll(val) {
-    document.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = val);
-}
-function setAllTimes(t) {
-    document.querySelectorAll('.local-time-input').forEach(inp => { inp.value = t; updateUtc(inp); });
-}
+function enableAll(val) { document.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = val); }
+function setAllTimes(t) { document.querySelectorAll('.local-time-input').forEach(inp => { inp.value = t; updateUtc(inp); }); }
 
-// Play Now — inline feedback
 async function playNow(btn, prayerType, filename) {
-    btn.textContent = '...'; btn.disabled = true;
-    const fb = document.getElementById('feedback');
-    try {
-        const r = await fetch('/prayers/adhoc', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-            body: new URLSearchParams({guild_id:'{{ guild_id }}',prayer_type:prayerType,filename})
-        });
-        fb.textContent = '✅ ' + prayerType + ' prayer queued — playing in a few seconds';
-        fb.className = 'feedback ok show';
-    } catch(e) {
-        fb.textContent = '❌ Failed to queue prayer';
-        fb.className = 'feedback err show';
-    }
-    btn.textContent = '▶ Play'; btn.disabled = false;
-    setTimeout(() => fb.classList.remove('show'), 4000);
+  btn.textContent = '...'; btn.disabled = true;
+  const fb = document.getElementById('feedback');
+  try {
+    await fetch('/prayers/adhoc', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      body: new URLSearchParams({guild_id:'{{ guild_id }}',prayer_type:prayerType,filename})
+    });
+    fb.textContent = '✅ ' + prayerType + ' prayer queued — playing in a few seconds';
+    fb.className = 'rounded bg-emerald-900/40 border border-emerald-700 px-3 py-2 text-sm text-emerald-200 mb-3';
+  } catch(e) {
+    fb.textContent = '❌ Failed to queue prayer';
+    fb.className = 'rounded bg-red-900/40 border border-red-700 px-3 py-2 text-sm text-red-200 mb-3';
+  }
+  btn.textContent = '▶ Play'; btn.disabled = false;
+  setTimeout(() => fb.className = 'hidden', 4000);
 }
 
 // Calendar
 document.addEventListener('DOMContentLoaded', () => {
-    const events = [];
-    {% for sched in schedules %}
-    {% if sched.enabled %}
-    events.push({title: '{{ sched.prayer_type.value | title }}', daysOfWeek: [{{ sched.day_of_week }}], startTime: '{{ sched.time_utc }}', color: '#5b4a3f'});
-    {% endif %}
-    {% endfor %}
-    const cal = new FullCalendar.Calendar(document.getElementById('calendar'), {
-        initialView: 'timeGridWeek',
-        headerToolbar: {left:'prev,next today', center:'title', right:'timeGridWeek,dayGridMonth'},
-        height: 'auto',
-        events,
-        slotMinTime: '00:00:00',
-        slotMaxTime: '24:00:00',
-    });
-    cal.render();
+  const events = [];
+  {% for sched in schedules %}{% if sched.enabled %}
+  events.push({title:'{{ sched.prayer_type.value | title }}',daysOfWeek:[{{ sched.day_of_week }}],startTime:'{{ sched.time_utc }}',color:'#6366f1'});
+  {% endif %}{% endfor %}
+  new FullCalendar.Calendar(document.getElementById('calendar'), {
+    initialView: 'timeGridWeek',
+    headerToolbar: {left:'prev,next today', center:'title', right:'timeGridWeek,dayGridMonth'},
+    height: 'auto',
+    events,
+    slotMinTime: '00:00:00',
+    slotMaxTime: '24:00:00',
+  }).render();
 });
 </script>
-</body>
-</html>
+{% endblock %}

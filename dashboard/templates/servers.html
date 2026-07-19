@@ -88,7 +88,7 @@
       <strong id="volume-display" class="text-sm">{{ current_volume }}%</strong>
     </div>
     <input type="hidden" id="volume-guild-id" value="{{ servers[0].guild_id }}">
-    <input type="range" id="volume-slider" min="50" max="250" value="{{ current_volume }}"
+    <input type="range" id="volume-slider" min="50" max="450" value="{{ current_volume }}"
            oninput="document.getElementById('volume-label').textContent=this.value+'%'"
            class="w-32">
     <span id="volume-label" class="text-sm text-slate-400">{{ current_volume }}%</span>
