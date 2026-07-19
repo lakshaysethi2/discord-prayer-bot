@@ -71,6 +71,9 @@ class PrayerBot(discord.Client):
         log.info("Prayer Bot logged in as %s (id=%s)", self.user, self.user.id)
         self._running = True
 
+        # Clear stale commands from previous sessions
+        self.db.execute("UPDATE dashboard_commands SET executed_at = datetime('now'), result = 'stale_restart' WHERE executed_at IS NULL")
+
         # Discover all guilds and cache channels (discord-radio pattern)
         for guild in self.guilds:
             await self._discover_guild(guild)
