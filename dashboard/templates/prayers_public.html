@@ -20,41 +20,29 @@
 
 <div class="inline-block rounded-full bg-slate-800 px-4 py-1.5 text-xs text-slate-400 mb-6" id="tz-badge">🕐 detecting...</div>
 
-{% set days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] %}
 {% set emojis = {"buddhist": "☸️", "christian": "✝️", "jewish": "✡️", "sufi": "☪️", "vedantic": "🕉️", "three_daily": "🌅"} %}
 
-{% set has_any = false %}
-{% for day_idx in range(7) %}
-  {% set day_has = false %}
-  {% for row in rows %}
-    {% if row.schedule.day_of_week == day_idx %}
-      {% set day_has = true %}{% set has_any = true %}
-    {% endif %}
-  {% endfor %}
-  {% if day_has %}
-  <div class="mb-6">
-    <div class="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">{{ days[day_idx] }}</div>
-    {% for row in rows %}
-      {% if row.schedule.day_of_week == day_idx %}
-      <div class="flex items-center gap-3 rounded-lg bg-slate-900 border border-slate-800 p-3 mb-1.5 hover:border-slate-700 transition" data-utc-time="{{ row.schedule.time_utc }}">
-        <div class="text-xl w-8 text-center">{{ emojis.get(row.schedule.prayer_type.value, "🙏") }}</div>
-        <div class="flex-1 min-w-0">
-          <div class="font-medium text-sm">{{ row.schedule.prayer_type.value | title }}</div>
-          <div class="text-xs text-slate-400">
-            <span class="local-time">--:--</span>
-            <span class="text-slate-600 ml-1">UTC {{ row.schedule.time_utc }}</span>
-          </div>
-        </div>
-        <a class="rounded-full bg-indigo-600 hover:bg-indigo-500 px-3 py-1 text-xs font-medium no-underline"
-           href="discord://-/channels/{{ guild_id }}/{{ voice_channel_id }}" target="_blank">Join</a>
+{% if schedules_by_day %}
+{% for day in schedules_by_day %}
+<div class="mb-6">
+  <div class="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">{{ day.day_name }}</div>
+  {% for row in day.schedules %}
+  <div class="flex items-center gap-3 rounded-lg bg-slate-900 border border-slate-800 p-3 mb-1.5 hover:border-slate-700 transition" data-utc-time="{{ row.schedule.time_utc }}">
+    <div class="text-xl w-8 text-center">{{ emojis.get(row.schedule.prayer_type.value, "🙏") }}</div>
+    <div class="flex-1 min-w-0">
+      <div class="font-medium text-sm">{{ row.schedule.prayer_type.value | title }}</div>
+      <div class="text-xs text-slate-400">
+        <span class="local-time">--:--</span>
+        <span class="text-slate-600 ml-1">UTC {{ row.schedule.time_utc }}</span>
       </div>
-      {% endif %}
-    {% endfor %}
+    </div>
+    <a class="rounded-full bg-indigo-600 hover:bg-indigo-500 px-3 py-1 text-xs font-medium no-underline"
+       href="discord://-/channels/{{ guild_id }}/{{ voice_channel_id }}" target="_blank">Join</a>
   </div>
-  {% endif %}
+  {% endfor %}
+</div>
 {% endfor %}
-
-{% if not has_any or not rows %}
+{% else %}
 <div class="text-center py-16 text-slate-500">
   <div class="text-4xl mb-3">📅</div>
   <p>No prayers scheduled yet. Check back soon!</p>

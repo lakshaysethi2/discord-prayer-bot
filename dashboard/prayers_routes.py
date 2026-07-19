@@ -259,9 +259,17 @@ async def prayers_public(
     current_guild_name = cfg.guild_name if cfg else guild_id
 
     # Build rows (browser handles UTC → local conversion)
-    # Filter enabled schedules server-side to avoid Jinja2 scoping edge cases
+    # Filter enabled schedules and organize by day for the template
     enabled_schedules = [s for s in schedules if s.enabled]
-    rows = [{"schedule": s} for s in enabled_schedules]
+    days_list = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    schedules_by_day = []
+    for day_idx in range(7):
+        day_schedules = [s for s in enabled_schedules if s.day_of_week == day_idx]
+        if day_schedules:
+            schedules_by_day.append({
+                "day_name": days_list[day_idx],
+                "schedules": [{"schedule": s} for s in day_schedules],
+            })
 
     return templates.TemplateResponse(
         request,
@@ -270,7 +278,7 @@ async def prayers_public(
             "guild_id": guild_id,
             "guild_name": current_guild_name,
             "all_guilds": all_guilds,
-            "rows": rows,
+            "schedules_by_day": schedules_by_day,
             "voice_channel_id": cfg.voice_channel_id if cfg else "",
         },
     )
