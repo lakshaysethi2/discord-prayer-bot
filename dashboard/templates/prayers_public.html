@@ -41,6 +41,19 @@
 document.addEventListener('DOMContentLoaded', function() {
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
     document.getElementById('user-tz').textContent = tz;
+    document.querySelectorAll('.prayer-time').forEach(function(el) {
+        const timeStr = el.getAttribute('data-time');
+        if (!timeStr) return;
+        const [h, m] = timeStr.split(':').map(Number);
+        const now = new Date();
+        // Build in user's local time to avoid UTC/day-shift issues
+        const d = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate(), h, m));
+        // Convert UTC time to local display
+        const localH = d.getHours();
+        const localM = d.getMinutes();
+        const display = new Date(now.getFullYear(), now.getMonth(), now.getDate(), localH, localM);
+        el.textContent = display.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZone: tz });
+    });
 });
 </script>
 </body>

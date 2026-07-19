@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import pytz
 from datetime import datetime, time, timedelta
 from typing import Callable, Awaitable
 
@@ -24,6 +25,7 @@ class PrayerScheduler:
         self.db = db
         self.play_prayer = play_prayer
         self.guild_id = guild_id
+        self.timezone = pytz.utc  # Default to UTC; can be configured from DB/admin
         self._task: asyncio.Task | None = None
         self._running = False
 
@@ -51,7 +53,8 @@ class PrayerScheduler:
             await asyncio.sleep(60)  # check every minute
 
     async def _check_and_play(self):
-        now = datetime.now()
+        # Database times are stored as naive HH:MM; interpret them in scheduler timezone
+        now = datetime.now(self.timezone)
         weekday = now.weekday()          # 0=Mon ... 6=Sun
         current_time = now.time().replace(second=0, microsecond=0)
 
