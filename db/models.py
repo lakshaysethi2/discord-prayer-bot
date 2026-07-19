@@ -137,7 +137,7 @@ SCHEMA: tuple[str, ...] = (
         time_utc TEXT NOT NULL,  -- HH:MM in UTC (timezone rules: UTC base)
         enabled INTEGER NOT NULL DEFAULT 1,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE(guild_id, day_of_week, prayer_type, time_utc)
+        UNIQUE(guild_id, day_of_week, time_utc)
     )
     """,
     # ---- prayer logs -------------------------------------------------------

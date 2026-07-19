@@ -2,9 +2,6 @@
 {% block title %}Schedule · Prayer Bot{% endblock %}
 
 {% block content %}
-<link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.css" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.js"></script>
-
 <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
   <div class="flex items-center gap-3">
     <h1 class="text-xl font-semibold">{{ guild_name }}</h1>
@@ -17,75 +14,65 @@
     </select>
     {% endif %}
   </div>
-  <div class="flex gap-2 text-xs">
-    <a href="/servers" class="text-slate-400 hover:text-white">⚙️ Servers</a>
-    <a href="/prayers/public/{{ guild_id }}" class="text-slate-400 hover:text-white">👁 Public</a>
-  </div>
+  <a href="/prayers/public/{{ guild_id }}" class="text-xs text-slate-400 hover:text-white">👁 Public view</a>
 </div>
 
-<div class="text-xs text-slate-500 mb-4">🕐 <span id="tz-info">detecting...</span> — all times shown in your local timezone</div>
+<div class="text-xs text-slate-500 mb-4">🕐 <span id="tz-info">detecting...</span> — all times in your local timezone</div>
 <div id="feedback" class="hidden rounded px-3 py-2 text-sm mb-3"></div>
 
 <form method="post" action="/prayers/save" id="schedule-form">
   <input type="hidden" name="guild_id" value="{{ guild_id }}">
 
-  <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
-    {% set days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] %}
-    {% set emojis = {"buddhist": "☸️", "christian": "✝️", "jewish": "✡️", "sufi": "☪️", "vedantic": "🕉️", "three_daily": "🌅"} %}
-    {% for day_idx in range(7) %}
-    <div class="rounded-lg bg-slate-900 border border-slate-800 p-3">
-      <div class="text-sm font-semibold text-slate-300 mb-2">{{ days[day_idx] }}</div>
-      {% for sched in schedules %}
-      {% if sched.day_of_week == day_idx %}
-      <div class="flex items-center gap-2 py-1 border-b border-slate-800/50 last:border-0">
-        <span class="text-sm w-5 text-center">{{ emojis.get(sched.prayer_type.value, "🙏") }}</span>
-        <span class="flex-1 text-xs text-slate-400 truncate">{{ sched.prayer_type.value | title }}</span>
-        <input type="time" name="time_{{ sched.id }}" class="time-inp bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs w-20 text-right"
-               value="{{ sched.time_utc }}" data-id="{{ sched.id }}" data-utc="{{ sched.time_utc }}">
-        <input type="checkbox" name="enabled_{{ sched.id }}" {% if sched.enabled %}checked{% endif %}
-               class="h-3.5 w-3.5">
-        <button type="button" onclick="playNow(this, '{{ sched.prayer_type.value }}', '{{ get_audio_filename(sched.prayer_type) }}')"
-                class="text-emerald-500 hover:text-emerald-400 text-xs" title="Play Now">▶</button>
-      </div>
+  {% set days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] %}
+  {% set prayer_types = ["buddhist", "christian", "jewish", "sufi", "vedantic", "three_daily"] %}
+  {% set prayer_labels = {"buddhist": "☸️ Buddhist", "christian": "✝️ Christian", "jewish": "✡️ Jewish", "sufi": "☪️ Sufi", "vedantic": "🕉️ Vedantic", "three_daily": "🌅 Three Daily"} %}
+
+  {% for day_idx in range(7) %}
+  {% set day_schedules = schedules | selectattr("day_of_week", "equalto", day_idx) | list %}
+  <div class="rounded-lg bg-slate-900 border border-slate-800 p-4 mb-3">
+    <div class="text-sm font-semibold text-slate-300 mb-3">{{ days[day_idx] }}</div>
+    {% for slot_num in range(3) %}
+    {% set sched = day_schedules[slot_num] if slot_num < day_schedules|length else None %}
+    <div class="flex items-center gap-2 py-1.5 {% if not loop.last %}border-b border-slate-800/50{% endif %}">
+      <span class="text-xs text-slate-600 w-4">{{ slot_num + 1 }}</span>
+      <input type="time" name="time_{{ sched.id if sched else 'new_' + day_idx|string + '_' + slot_num|string }}"
+             class="time-inp bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs w-24"
+             value="{{ sched.time_utc if sched else '' }}" data-id="{{ sched.id if sched else '' }}" data-utc="{{ sched.time_utc if sched else '' }}">
+      <select name="prayer_{{ sched.id if sched else 'new_' + day_idx|string + '_' + slot_num|string }}"
+              class="flex-1 bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs">
+        <option value="">— none —</option>
+        {% for pt in prayer_types %}
+        <option value="{{ pt }}" {% if sched and sched.prayer_type.value == pt %}selected{% endif %}>{{ prayer_labels[pt] }}</option>
+        {% endfor %}
+      </select>
+      <input type="checkbox" name="enabled_{{ sched.id if sched else 'new_' + day_idx|string + '_' + slot_num|string }}"
+             {% if sched and sched.enabled %}checked{% endif %} class="h-3.5 w-3.5">
+      {% if sched and sched.enabled %}
+      <button type="button" onclick="playNow(this, '{{ sched.id }}')"
+              class="text-emerald-500 hover:text-emerald-400 text-xs px-1" title="Play Now">▶</button>
       {% endif %}
-      {% endfor %}
     </div>
     {% endfor %}
   </div>
+  {% endfor %}
 
-  <div class="flex flex-wrap gap-2 mb-4">
-    <button type="button" onclick="quickSet('enable')" class="rounded bg-slate-800 hover:bg-slate-700 px-3 py-1 text-xs">✓ Enable All</button>
-    <button type="button" onclick="quickSet('disable')" class="rounded bg-slate-800 hover:bg-slate-700 px-3 py-1 text-xs">✗ Disable All</button>
-    <span class="text-slate-600 mx-1">|</span>
-    <button type="button" onclick="setAllTimes('06:00')" class="rounded bg-slate-800 hover:bg-slate-700 px-3 py-1 text-xs">🕕 06:00</button>
-    <button type="button" onclick="setAllTimes('12:00')" class="rounded bg-slate-800 hover:bg-slate-700 px-3 py-1 text-xs">🕛 12:00</button>
-    <button type="button" onclick="setAllTimes('18:00')" class="rounded bg-slate-800 hover:bg-slate-700 px-3 py-1 text-xs">🌇 18:00</button>
-  </div>
-
-  <button type="submit" class="w-full rounded bg-indigo-600 hover:bg-indigo-500 py-3 text-sm font-medium">Save All Changes</button>
+  <button type="submit" class="w-full rounded bg-indigo-600 hover:bg-indigo-500 py-3 text-sm font-medium mt-2">Save Schedule</button>
 </form>
 
-<details class="mt-6">
-  <summary class="text-sm text-slate-400 cursor-pointer hover:text-slate-300">📅 Calendar view</summary>
-  <div class="mt-3 rounded-lg bg-slate-900 border border-slate-800 p-4">
-    <div id="calendar"></div>
-  </div>
-</details>
-
 <script>
-// Timezone
 const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
 const off = -(new Date().getTimezoneOffset()) / 60;
 document.getElementById('tz-info').textContent = tz + ' (UTC' + (off>=0?'+':'') + off.toFixed(1) + 'h)';
 
-// Init: convert UTC → local
+// Init: UTC → local
 document.querySelectorAll('.time-inp').forEach(inp => {
+  if (!inp.dataset.utc) return;
   const [h,m] = inp.dataset.utc.split(':').map(Number);
   const d = new Date(Date.UTC(2024,0,1,h,m));
   inp.value = String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
 });
 
-// Submit: convert local → UTC
+// Submit: local → UTC
 document.getElementById('schedule-form').addEventListener('submit', function(e) {
   e.preventDefault();
   document.querySelectorAll('.time-inp').forEach(inp => {
@@ -97,23 +84,16 @@ document.getElementById('schedule-form').addEventListener('submit', function(e) 
   this.submit();
 });
 
-function quickSet(action) {
-  document.querySelectorAll('input[type="checkbox"]').forEach(cb => { cb.checked = action === 'enable'; });
-}
-function setAllTimes(t) {
-  document.querySelectorAll('.time-inp').forEach(inp => { inp.value = t; });
-}
-
-async function playNow(btn, prayerType, filename) {
+async function playNow(btn, scheduleId) {
   btn.textContent = '⋯'; btn.disabled = true;
   const fb = document.getElementById('feedback');
   try {
-    await fetch('/prayers/adhoc', {
+    const r = await fetch('/prayers/adhoc-by-id', {
       method: 'POST',
       headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-      body: new URLSearchParams({guild_id:'{{ guild_id }}',prayer_type:prayerType,filename})
+      body: new URLSearchParams({schedule_id: scheduleId})
     });
-    fb.textContent = '✅ ' + prayerType + ' prayer queued';
+    fb.textContent = '✅ Queued';
     fb.className = 'rounded bg-emerald-900/40 border border-emerald-700 px-3 py-2 text-sm text-emerald-200 mb-3';
   } catch(e) {
     fb.textContent = '❌ Failed';
@@ -122,21 +102,5 @@ async function playNow(btn, prayerType, filename) {
   btn.textContent = '▶'; btn.disabled = false;
   setTimeout(() => fb.className = 'hidden', 3000);
 }
-
-// Calendar
-document.addEventListener('DOMContentLoaded', () => {
-  const events = [];
-  {% for sched in schedules %}{% if sched.enabled %}
-  events.push({title:'{{ sched.prayer_type.value | title }}',daysOfWeek:[{{ sched.day_of_week }}],startTime:'{{ sched.time_utc }}',color:'#6366f1'});
-  {% endif %}{% endfor %}
-  new FullCalendar.Calendar(document.getElementById('calendar'), {
-    initialView: 'timeGridWeek',
-    headerToolbar: {left:'prev,next today', center:'title', right:'timeGridWeek,dayGridMonth'},
-    height: 'auto',
-    events,
-    slotMinTime: '00:00:00',
-    slotMaxTime: '24:00:00',
-  }).render();
-});
 </script>
 {% endblock %}
