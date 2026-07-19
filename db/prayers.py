@@ -29,7 +29,7 @@ def create_prayer_schedules_table(db: Database) -> None:
             played_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             prayer_type TEXT NOT NULL,
             success INTEGER NOT NULL DEFAULT 0,
-            FOREIGN KEY(schedule_id) REFERENCES prayer_schedules(id)
+            FOREIGN KEY(schedule_id) REFERENCES prayer_schedules(id) ON DELETE CASCADE
         )
     """)
 
@@ -65,6 +65,14 @@ def upsert_schedule(db: Database, guild_id: str, day: int, prayer_type: PrayerTy
     row = db.fetchone("SELECT id FROM prayer_schedules WHERE guild_id=? AND day_of_week=? AND prayer_type=? AND time=?",
                        (guild_id, day, prayer_type.value, t.isoformat()))
     return row["id"] if row else -1
+
+
+def update_schedule(db: Database, schedule_id: int, t: time, enabled: bool) -> None:
+    db.execute("""
+        UPDATE prayer_schedules
+        SET time = ?, enabled = ?
+        WHERE id = ?
+    """, (t.isoformat(), int(enabled), schedule_id))
 
 
 def delete_schedule(db: Database, schedule_id: int) -> None:
