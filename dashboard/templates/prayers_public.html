@@ -83,7 +83,7 @@ document.querySelectorAll('[data-utc-time]').forEach(card => {
 
 const nextEl = document.querySelector('.local-time-next');
 if (nextEl) {
-    const d = new Date(nextEl.dataset.iso + 'Z');
+    const d = new Date(nextEl.dataset.iso);
     const localTime = d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
     const localDay = d.toLocaleDateString([], {weekday: 'long'});
     const localDate = d.toLocaleDateString([], {day: 'numeric', month: 'short'});
