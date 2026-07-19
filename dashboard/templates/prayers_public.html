@@ -27,7 +27,7 @@
 {% for day_idx in range(7) %}
   {% set day_has = false %}
   {% for row in rows %}
-    {% if row.schedule.day_of_week == day_idx and row.schedule.enabled %}
+    {% if row.schedule.day_of_week == day_idx %}
       {% set day_has = true %}{% set has_any = true %}
     {% endif %}
   {% endfor %}
@@ -35,7 +35,7 @@
   <div class="mb-6">
     <div class="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">{{ days[day_idx] }}</div>
     {% for row in rows %}
-      {% if row.schedule.day_of_week == day_idx and row.schedule.enabled %}
+      {% if row.schedule.day_of_week == day_idx %}
       <div class="flex items-center gap-3 rounded-lg bg-slate-900 border border-slate-800 p-3 mb-1.5 hover:border-slate-700 transition" data-utc-time="{{ row.schedule.time_utc }}">
         <div class="text-xl w-8 text-center">{{ emojis.get(row.schedule.prayer_type.value, "🙏") }}</div>
         <div class="flex-1 min-w-0">
@@ -54,7 +54,7 @@
   {% endif %}
 {% endfor %}
 
-{% if not has_any %}
+{% if not has_any or not rows %}
 <div class="text-center py-16 text-slate-500">
   <div class="text-4xl mb-3">📅</div>
   <p>No prayers scheduled yet. Check back soon!</p>

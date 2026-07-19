@@ -5,6 +5,7 @@ All notable changes to the Discord Prayer Bot.
 ## [Unreleased]
 
 ### Fixed
+- Public view shows empty even when enabled schedules exist — now filters enabled schedules server-side before passing to template
 - `upsert_schedule` ON CONFLICT target now matches schema constraint (`guild_id, day_of_week, time_utc`) instead of referencing `prayer_type`
 - Test assertion in `test_routes.py` updated to match actual template output
 

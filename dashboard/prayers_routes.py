@@ -259,7 +259,9 @@ async def prayers_public(
     current_guild_name = cfg.guild_name if cfg else guild_id
 
     # Build rows (browser handles UTC → local conversion)
-    rows = [{"schedule": s} for s in schedules]
+    # Filter enabled schedules server-side to avoid Jinja2 scoping edge cases
+    enabled_schedules = [s for s in schedules if s.enabled]
+    rows = [{"schedule": s} for s in enabled_schedules]
 
     return templates.TemplateResponse(
         request,
