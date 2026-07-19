@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, time
-from fastapi import APIRouter, Request, Form
+from fastapi import APIRouter, Request, Form, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
@@ -13,8 +13,20 @@ router = APIRouter()
 templates = Jinja2Templates(directory="dashboard/templates")
 
 
+def get_db():
+    db = Database()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
 @router.get("/prayers/{guild_id}", response_class=HTMLResponse)
-async def prayers_admin(request: Request, guild_id: str, db: Database):
+async def prayers_admin(
+    request: Request,
+    guild_id: str,
+    db: Database = Depends(get_db),
+):
     schedules = get_weekly_schedule(db, guild_id)
 
     # Build simple calendar events for FullCalendar
@@ -34,7 +46,7 @@ async def prayers_admin(request: Request, guild_id: str, db: Database):
 @router.post("/prayers/save")
 async def save_prayers(
     guild_id: str = Form(...),
-    db: Database = None,  # injected by FastAPI
+    db: Database = Depends(get_db),
 ):
     # In real implementation we would parse all form fields
     # For demo we just redirect back
