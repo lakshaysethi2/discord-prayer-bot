@@ -28,26 +28,16 @@
     <div class="cards">
         <a href="/servers" class="card">
             <div class="icon">⚙️</div>
-            <h3>Server Settings</h3>
-            <p>Enable bot, select voice & text channels, configure timezone</p>
-        </a>
-        <a href="/prayers/1389131646758031410" class="card">
-            <div class="icon">📅</div>
-            <h3>Schedule Prayers</h3>
-            <p>Set weekly prayer times for each tradition (admin login required)</p>
+            <h3>Servers</h3>
+            <p>Enable bot, select channels, then access schedule & controls per guild</p>
         </a>
         {% if request.cookies.get('prayer_session') %}
-        <a href="/prayers/1389131646758031410" class="card">
+        <a href="/servers" class="card">
             <div class="icon">▶️</div>
             <h3>Ad-Hoc Recite</h3>
-            <p>Click "Play Now" to immediately recite any prayer in voice</p>
+            <p>Go to a guild's schedule page and click "Play Now" for any prayer</p>
         </a>
         {% endif %}
-        <a href="/prayers/public/1389131646758031410" class="card">
-            <div class="icon">👁️</div>
-            <h3>Public Schedule</h3>
-            <p>View this week's prayer times (no login required)</p>
-        </a>
     </div>
 
     <div class="status">
