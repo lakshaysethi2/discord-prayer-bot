@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Prayer Schedule - Public View</title>
+    <style>
+        body { font-family: sans-serif; margin: 40px; background: #f9f9f9; color: #333; }
+        h1 { color: #2c3e50; }
+        table { width: 100%; border-collapse: collapse; background: #fff; margin-top: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        th, td { padding: 12px 16px; border-bottom: 1px solid #ddd; text-align: left; }
+        th { background: #2c3e50; color: #fff; }
+        .timezone-note { font-style: italic; color: #666; margin-top: 10px; }
+    </style>
+</head>
+<body>
+<h1>Prayer Schedule (Guild: {{ guild_id }})</h1>
+<p class="timezone-note">Times shown below are viewed in your local timezone (<span id="user-tz"></span>).</p>
+
+<table>
+    <tr>
+        <th>Day of Week</th>
+        <th>Prayer Type</th>
+        <th>Scheduled Time</th>
+        <th>Status</th>
+    </tr>
+    {% for sched in schedules %}
+    <tr>
+        <td>
+            {% set days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] %}
+            {{ days[sched.day_of_week] }}
+        </td>
+        <td>{{ sched.prayer_type.value | title }}</td>
+        <td>
+            <span class="prayer-time" data-time="{{ sched.time }}">{{ sched.time }}</span>
+        </td>
+        <td>{% if sched.enabled %}Active{% else %}Disabled{% endif %}</td>
+    </tr>
+    {% endfor %}
+</table>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    document.getElementById('user-tz').textContent = tz;
+});
+</script>
+</body>
+</html>
