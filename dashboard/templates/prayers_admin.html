@@ -1,181 +1,198 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Prayer Schedule - Admin</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.css">
+    <title>Prayer Schedule — Admin</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.js"></script>
     <style>
-        body { font-family: sans-serif; margin: 20px; background: #f9f9f9; color: #333; }
-        h1, h2 { color: #2c3e50; }
-        table { width: 100%; border-collapse: collapse; background: #fff; margin: 16px 0; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-        th, td { padding: 8px 12px; border-bottom: 1px solid #ddd; text-align: center; }
-        th { background: #2c3e50; color: #fff; }
-        input[type="time"] { padding: 4px; border: 1px solid #ccc; border-radius: 3px; width: 100px; }
-        button, .btn { background: #2c3e50; color: #fff; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; margin: 4px; font-size: 13px; }
-        button:hover { background: #34495e; }
-        .btn-play { background: #27ae60; font-size: 11px; padding: 4px 8px; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f3f0; color: #3d3226; }
+        .nav { display: flex; gap: 4px; padding: 8px 16px; background: #fff; border-bottom: 1px solid #eee; overflow-x: auto; }
+        .nav a { padding: 6px 14px; border-radius: 6px; text-decoration: none; font-size: 13px; color: #666; white-space: nowrap; }
+        .nav a.active { background: #3d3226; color: #fff; }
+        .nav a:hover:not(.active) { background: #f0f0f0; }
+        .container { max-width: 800px; margin: 0 auto; padding: 16px; }
+
+        .guild-bar { display: flex; gap: 8px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
+        .guild-bar select { padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; background: #fff; }
+        .guild-bar h2 { font-size: 1.2em; }
+
+        .quick-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }
+        .quick-actions button { padding: 6px 12px; border: 1px solid #ddd; border-radius: 16px; background: #fff; font-size: 12px; cursor: pointer; }
+        .quick-actions button:hover { border-color: #3d3226; }
+
+        .tz-bar { font-size: 13px; color: #888; margin-bottom: 12px; }
+        table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.04); margin-bottom: 16px; }
+        th { background: #3d3226; color: #fff; padding: 10px 12px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+        td { padding: 8px 12px; border-bottom: 1px solid #f0f0f0; font-size: 14px; }
+        tr:last-child td { border-bottom: none; }
+        input[type="time"] { border: 1px solid #ddd; border-radius: 4px; padding: 4px 8px; font-size: 13px; width: 100px; }
+        input[type="checkbox"] { width: 18px; height: 18px; cursor: pointer; }
+        .btn { padding: 6px 14px; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500; }
+        .btn-save { background: #3d3226; color: #fff; width: 100%; padding: 12px; font-size: 15px; }
+        .btn-save:hover { background: #5b4a3f; }
+        .btn-play { background: #27ae60; color: #fff; padding: 4px 12px; border: none; border-radius: 12px; font-size: 12px; cursor: pointer; }
         .btn-play:hover { background: #2ecc71; }
-        .prayer-row:nth-child(even) { background: #f5f5f5; }
-        .flash { background: #d4edda; padding: 10px; border-radius: 4px; margin-bottom: 12px; }
-        .tabs { display: flex; gap: 8px; margin-bottom: 16px; }
-        .tab { padding: 8px 16px; background: #ddd; border-radius: 4px; cursor: pointer; text-decoration: none; color: #333; }
-        .tab.active { background: #2c3e50; color: #fff; }
-        #calendar { max-width: 900px; margin: 20px auto; }
-        .tz-info { background: #e8f4f8; padding: 10px 16px; border-radius: 6px; margin-bottom: 16px; font-size: 14px; }
-        .utc-time { color: #999; font-size: 11px; }
-        .local-label { color: #2c3e50; font-weight: 600; }
+        .btn-play.playing { background: #e67e22; }
+        .feedback { padding: 8px 14px; border-radius: 6px; margin: 8px 0; font-size: 13px; display: none; }
+        .feedback.show { display: block; }
+        .feedback.ok { background: #d4edda; color: #155724; }
+        .feedback.err { background: #f8d7da; color: #721c24; }
+
+        .day-header { background: #f8f6f3; font-weight: 700; font-size: 13px; color: #5b4a3f; }
+        .calendar-wrap { background: #fff; border-radius: 10px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); margin-bottom: 16px; }
+        #calendar { max-width: 100%; }
+
+        @media (max-width: 600px) {
+            td, th { padding: 6px 4px; font-size: 11px; }
+            input[type="time"] { width: 72px; font-size: 11px; }
+            .btn-play { padding: 2px 8px; font-size: 10px; }
+            .container { padding: 8px; }
+        }
     </style>
 </head>
 <body>
-<h1>🙏 Prayer Schedule</h1>
-<h2 style="font-weight:normal;color:#666;margin-top:-10px;">{{ guild_name }}</h2>
-
-{% if all_guilds|length > 1 %}
-<div style="margin-bottom:16px;">
-    <label style="font-weight:600;">Switch guild:</label>
-    <select onchange="if(this.value) window.location.href='/prayers/' + this.value" style="padding:6px 12px;border-radius:4px;border:1px solid #ccc;font-size:14px;">
-        <option value="">-- Select server --</option>
-        {% for g in all_guilds %}
-        <option value="{{ g.guild_id }}" {% if g.guild_id == guild_id %}selected{% endif %}>{{ g.name }}</option>
-        {% endfor %}
-    </select>
-</div>
-{% endif %}
-
-{% if request.query_params.get('flash') %}
-<div class="flash">{{ request.query_params.get('flash') }}</div>
-{% endif %}
-
-<div class="tabs">
-    <a href="/" class="tab">🏠 Home</a>
-    <a href="/servers" class="tab">⚙️ Servers</a>
-    <span class="tab active">📅 Schedule</span>
-    <a href="/prayers/public/{{ guild_id }}" class="tab">👁️ Public View</a>
+<div class="nav">
+    <a href="/">Home</a>
+    <a href="/servers">Servers</a>
+    <a href="/prayers/{{ guild_id }}" class="active">Schedule</a>
+    <a href="/prayers/public/{{ guild_id }}">Public</a>
 </div>
 
-<div class="tz-info">
-    🕐 Your browser timezone: <strong id="tz-name">detecting...</strong>
-    (offset: <strong id="tz-offset">...</strong>)
-    <br>Times you enter below are in <span class="local-label">your local time</span> and auto-converted to UTC on save.
-    <br>UTC equivalents are shown alongside for reference.
-</div>
+<div class="container">
+    <div class="guild-bar">
+        <h2>{{ guild_name }}</h2>
+        {% if all_guilds|length > 1 %}
+        <select onchange="if(this.value) window.location.href='/prayers/' + this.value">
+            {% for g in all_guilds %}
+            <option value="{{ g.guild_id }}" {% if g.guild_id == guild_id %}selected{% endif %}>{{ g.name }}</option>
+            {% endfor %}
+        </select>
+        {% endif %}
+    </div>
 
-<form method="post" action="/prayers/save" id="schedule-form">
-    <input type="hidden" name="guild_id" value="{{ guild_id }}">
-    <table>
-        <tr>
-            <th>Day</th>
-            <th>Prayer</th>
-            <th>Time (your local)</th>
-            <th>≡ UTC</th>
-            <th>Enabled</th>
-            <th>Ad-Hoc</th>
-        </tr>
-        {% for sched in schedules %}
-        <tr class="prayer-row" data-utc-time="{{ sched.time_utc }}">
-            <td>
-                {% set days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] %}
-                {{ days[sched.day_of_week] }}
-            </td>
-            <td>{{ sched.prayer_type.value | title }}</td>
-            <td>
-                <input type="time" name="time_{{ sched.id }}" class="local-time-input"
-                       value="{{ sched.time_utc }}" data-sched-id="{{ sched.id }}"
-                       onchange="updateUtcDisplay(this)">
-            </td>
-            <td><span class="utc-time" id="utc-display-{{ sched.id }}">{{ sched.time_utc }}</span></td>
-            <td><input type="checkbox" name="enabled_{{ sched.id }}" {% if sched.enabled %}checked{% endif %}></td>
-            <td>
-                <button type="button" class="btn-play" onclick="playNow('{{ sched.prayer_type.value }}', '{{ get_audio_filename(sched.prayer_type) }}')">▶ Play Now</button>
-            </td>
-        </tr>
-        {% endfor %}
-    </table>
-    <button type="submit">💾 Save Schedule</button>
-</form>
+    <div class="tz-bar">🕐 <span id="tz-info">detecting...</span> — times entered in your local time, saved as UTC</div>
+
+    <div id="feedback" class="feedback"></div>
+
+    <div class="quick-actions">
+        <button onclick="enableAll(true)">✓ Enable All</button>
+        <button onclick="enableAll(false)">✗ Disable All</button>
+        <button onclick="setAllTimes('06:00')">🕕 Set All 06:00</button>
+        <button onclick="setAllTimes('12:00')">🕛 Set All 12:00</button>
+        <button onclick="setAllTimes('18:00')">🕕 Set All 18:00</button>
+    </div>
+
+    <form method="post" action="/prayers/save" id="schedule-form">
+        <input type="hidden" name="guild_id" value="{{ guild_id }}">
+        <table>
+            <tr><th>Day</th><th>Prayer</th><th>Time (local)</th><th>≡ UTC</th><th>On</th><th></th></tr>
+            {% set days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] %}
+            {% set prev_day = -1 %}
+            {% for sched in schedules %}
+            {% if sched.day_of_week != prev_day %}<tr class="day-header"><td colspan="6">{{ days[sched.day_of_week] }}</td></tr>{% set prev_day = sched.day_of_week %}{% endif %}
+            <tr data-utc-time="{{ sched.time_utc }}">
+                <td></td>
+                <td>{{ sched.prayer_type.value | title }}</td>
+                <td><input type="time" name="time_{{ sched.id }}" class="local-time-input" value="{{ sched.time_utc }}" data-id="{{ sched.id }}" onchange="updateUtc(this)"></td>
+                <td><span class="utc-display" id="utc-{{ sched.id }}">{{ sched.time_utc }}</span></td>
+                <td><input type="checkbox" name="enabled_{{ sched.id }}" {% if sched.enabled %}checked{% endif %}></td>
+                <td><button type="button" class="btn-play" onclick="playNow(this, '{{ sched.prayer_type.value }}', '{{ get_audio_filename(sched.prayer_type) }}')">▶ Play</button></td>
+            </tr>
+            {% endfor %}
+        </table>
+        <button type="submit" class="btn btn-save">Save Schedule</button>
+    </form>
+
+    <div class="calendar-wrap">
+        <div id="calendar"></div>
+    </div>
+</div>
 
 <script>
-// --- Timezone detection ---
+// Timezone
 const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-const now = new Date();
-const offsetMinutes = -now.getTimezoneOffset(); // positive = ahead of UTC
-const offsetHours = offsetMinutes / 60;
-const offsetStr = (offsetHours >= 0 ? '+' : '') + offsetHours.toFixed(1) + 'h';
+const off = -(new Date().getTimezoneOffset()) / 60;
+document.getElementById('tz-info').textContent = tz + ' (UTC' + (off>=0?'+':'') + off.toFixed(1) + 'h)';
 
-document.getElementById('tz-name').textContent = tz;
-document.getElementById('tz-offset').textContent = 'UTC' + offsetStr;
+// Init: convert UTC → local
+document.querySelectorAll('[data-utc-time]').forEach(row => {
+    const [h,m] = row.dataset.utcTime.split(':').map(Number);
+    const utc = new Date(Date.UTC(2024,0,1,h,m));
+    const lh = String(utc.getHours()).padStart(2,'0');
+    const lm = String(utc.getMinutes()).padStart(2,'0');
+    const inp = row.querySelector('.local-time-input');
+    if (inp && inp.value === row.dataset.utcTime) inp.value = lh + ':' + lm;
+});
 
-// --- Convert input time from local to UTC before submit ---
+function updateUtc(inp) {
+    if (!inp.value) return;
+    const [h,m] = inp.value.split(':').map(Number);
+    const d = new Date(); d.setHours(h,m,0,0);
+    const uh = String(d.getUTCHours()).padStart(2,'0');
+    const um = String(d.getUTCMinutes()).padStart(2,'0');
+    const disp = document.getElementById('utc-' + inp.dataset.id);
+    if (disp) disp.textContent = uh + ':' + um;
+}
+
+// Submit: convert local → UTC
 document.getElementById('schedule-form').addEventListener('submit', function(e) {
     e.preventDefault();
-    const inputs = document.querySelectorAll('.local-time-input');
-    inputs.forEach(function(input) {
-        if (input.value) {
-            // Parse HH:MM as local time, convert to UTC
-            const [h, m] = input.value.split(':').map(Number);
-            const localDate = new Date();
-            localDate.setHours(h, m, 0, 0);
-            // Get UTC hours/minutes
-            const utcH = String(localDate.getUTCHours()).padStart(2, '0');
-            const utcM = String(localDate.getUTCMinutes()).padStart(2, '0');
-            // Store UTC value back
-            input.value = utcH + ':' + utcM;
-        }
+    document.querySelectorAll('.local-time-input').forEach(inp => {
+        if (!inp.value) return;
+        const [h,m] = inp.value.split(':').map(Number);
+        const d = new Date(); d.setHours(h,m,0,0);
+        inp.value = String(d.getUTCHours()).padStart(2,'0') + ':' + String(d.getUTCMinutes()).padStart(2,'0');
     });
     this.submit();
 });
 
-// --- Update UTC display when user changes local time ---
-function updateUtcDisplay(input) {
-    if (!input.value) return;
-    const [h, m] = input.value.split(':').map(Number);
-    const localDate = new Date();
-    localDate.setHours(h, m, 0, 0);
-    const utcH = String(localDate.getUTCHours()).padStart(2, '0');
-    const utcM = String(localDate.getUTCMinutes()).padStart(2, '0');
-    const sid = input.dataset.schedId;
-    const display = document.getElementById('utc-display-' + sid);
-    if (display) display.textContent = utcH + ':' + utcM;
+function enableAll(val) {
+    document.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = val);
+}
+function setAllTimes(t) {
+    document.querySelectorAll('.local-time-input').forEach(inp => { inp.value = t; updateUtc(inp); });
 }
 
-// --- Initialize: convert UTC times from server to local for display ---
-(function() {
-    const rows = document.querySelectorAll('.prayer-row');
-    rows.forEach(function(row) {
-        const utcTime = row.dataset.utcTime;
-        if (!utcTime) return;
-        const [h, m] = utcTime.split(':').map(Number);
-        // Create a UTC date and get local time
-        const utcDate = new Date(Date.UTC(2024, 0, 1, h, m));
-        const localH = String(utcDate.getHours()).padStart(2, '0');
-        const localM = String(utcDate.getMinutes()).padStart(2, '0');
-        const input = row.querySelector('.local-time-input');
-        if (input && input.value === utcTime) {
-            input.value = localH + ':' + localM;
-        }
-        // Update UTC display
-        const sid = input ? input.dataset.schedId : null;
-        if (sid) {
-            const display = document.getElementById('utc-display-' + sid);
-            if (display) display.textContent = utcTime;
-        }
-    });
-})();
-
-// --- Ad-hoc play ---
-async function playNow(prayerType, filename) {
-    const resp = await fetch('/prayers/adhoc', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-        body: new URLSearchParams({
-            guild_id: '{{ guild_id }}',
-            prayer_type: prayerType,
-            filename: filename
-        })
-    });
-    const result = await resp.text();
-    alert(result);
+// Play Now — inline feedback
+async function playNow(btn, prayerType, filename) {
+    btn.textContent = '...'; btn.disabled = true;
+    const fb = document.getElementById('feedback');
+    try {
+        const r = await fetch('/prayers/adhoc', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+            body: new URLSearchParams({guild_id:'{{ guild_id }}',prayer_type:prayerType,filename})
+        });
+        fb.textContent = '✅ ' + prayerType + ' prayer queued — playing in a few seconds';
+        fb.className = 'feedback ok show';
+    } catch(e) {
+        fb.textContent = '❌ Failed to queue prayer';
+        fb.className = 'feedback err show';
+    }
+    btn.textContent = '▶ Play'; btn.disabled = false;
+    setTimeout(() => fb.classList.remove('show'), 4000);
 }
+
+// Calendar
+document.addEventListener('DOMContentLoaded', () => {
+    const events = [];
+    {% for sched in schedules %}
+    {% if sched.enabled %}
+    events.push({title: '{{ sched.prayer_type.value | title }}', daysOfWeek: [{{ sched.day_of_week }}], startTime: '{{ sched.time_utc }}', color: '#5b4a3f'});
+    {% endif %}
+    {% endfor %}
+    const cal = new FullCalendar.Calendar(document.getElementById('calendar'), {
+        initialView: 'timeGridWeek',
+        headerToolbar: {left:'prev,next today', center:'title', right:'timeGridWeek,dayGridMonth'},
+        height: 'auto',
+        events,
+        slotMinTime: '00:00:00',
+        slotMaxTime: '24:00:00',
+    });
+    cal.render();
+});
 </script>
 </body>
 </html>
