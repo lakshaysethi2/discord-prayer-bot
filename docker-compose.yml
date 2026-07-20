@@ -28,3 +28,15 @@ services:
       - ADMIN_TOKEN=${ADMIN_TOKEN:-dev-token-change-me}
     restart: unless-stopped
     command: uvicorn dashboard.app:app --host 0.0.0.0 --port 8000
+
+  cypress:
+    image: cypress/included:14.3.0
+    container_name: prayer-cypress
+    profiles:
+      - e2e
+    volumes:
+      - .:/e2e
+    working_dir: /e2e
+    environment:
+      - CYPRESS_ADMIN_TOKEN=${ADMIN_TOKEN:-dev-token-change-me}
+    entrypoint: ["cypress", "run", "--config", "baseUrl=https://prayer-bot-dnd.lak.nz"]
