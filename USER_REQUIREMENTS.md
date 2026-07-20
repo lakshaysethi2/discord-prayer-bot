@@ -41,6 +41,12 @@ A Discord bot that plays scheduled prayer audio (6 traditions: Buddhist, Christi
 - Dashboard changes take effect within 2-30s via `dashboard_commands` queue
 - No bot restart required
 
+### FR-7: Schedule Save Idempotency
+- Saving the prayer schedule without changing any times must NOT alter the stored times
+- UTC↔local timezone conversion must be an exact inverse (no DST drift)
+- JS conversions use a fixed reference date (2024-01-01) for both init and submit
+- Server accepts ISO 8601 timestamps to avoid ambiguity
+
 ## Non-Functional Requirements
 - Docker Compose deployment
 - SQLite database with WAL mode
