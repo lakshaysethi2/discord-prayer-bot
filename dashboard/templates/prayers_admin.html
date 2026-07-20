@@ -18,6 +18,10 @@
 </div>
 
 <div class="text-xs text-slate-500 mb-4">🕐 <span id="tz-info">detecting...</span> — all times in your local timezone</div>
+{% set flash_msg = request.query_params.get('flash', '') %}
+{% if flash_msg %}
+<div id="flash-msg" class="mb-4 rounded bg-emerald-900/40 border border-emerald-700 px-3 py-2 text-sm text-emerald-200">{{ flash_msg }}</div>
+{% endif %}
 <div id="feedback" class="hidden rounded px-3 py-2 text-sm mb-3"></div>
 
 <form method="post" action="/prayers/save" id="schedule-form">

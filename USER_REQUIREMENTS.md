@@ -65,7 +65,20 @@ A Discord bot that plays scheduled prayer audio (6 traditions: Buddhist, Christi
 ## Verification Commands
 ```bash
 make test          # Run pytest in Docker (25 tests)
+make test-e2e      # Run Cypress E2E tests against live site (prayer-bot-dnd.lak.nz)
 make up            # Start bot + dashboard
 make logs          # View logs
 make down          # Stop services
 ```
+
+## Cypress E2E Tests
+- Live site: `https://prayer-bot-dnd.lak.nz`
+- Guild ID under test: `1194598173742731284`
+- Requires valid `ADMIN_TOKEN` in `.env` for admin schedule save tests
+- Run with: `make test-e2e` (uses `cypress/included` Docker image, no local Node required)
+- Spec files:
+  - `cypress/e2e/landing.cy.js` - Landing page tests (9 tests)
+  - `cypress/e2e/login.cy.js` - Login page tests (7 tests)
+  - `cypress/e2e/public-schedule.cy.js` - Public schedule view (14 tests)
+  - `cypress/e2e/navigation.cy.js` - Cross-page navigation and auth protection (8 tests)
+  - `cypress/e2e/admin-schedule.cy.js` - Admin schedule save with UTC/local round-trip (8 tests)
