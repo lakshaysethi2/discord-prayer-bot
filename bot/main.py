@@ -55,6 +55,7 @@ class PrayerBot(discord.Client):
         self.players: dict[str, Player] = {}  # guild_id -> Player
         self.schedulers: dict[str, PrayerScheduler] = {}  # guild_id -> PrayerScheduler
         self.voice_connections: dict[str, discord.VoiceClient] = {}
+        self._disconnect_tasks: dict[str, asyncio.Task] = {}
         self.stations: dict[str, dict] = {}  # for apply_server_config
         self.per_guild_announcers: dict = {}
         self._command_task: asyncio.Task | None = None
@@ -164,6 +165,14 @@ class PrayerBot(discord.Client):
             return None
 
         existing = self.voice_connections.get(guild_id)
+        # If cached VC is stale/disconnected, clear it
+        if existing and not existing.is_connected():
+            self.voice_connections.pop(guild_id, None)
+            existing = None
+        # Prefer guild.voice_client if already live and connected
+        if existing is None and guild.voice_client and guild.voice_client.is_connected():
+            existing = guild.voice_client
+            self.voice_connections[guild_id] = existing
         if existing and existing.is_connected():
             if existing.channel and str(existing.channel.id) == str(cfg.voice_channel_id):
                 return existing
@@ -198,6 +207,22 @@ class PrayerBot(discord.Client):
             if player is None or not player.is_playing():
                 await vc.disconnect()
                 log.info("Disconnected from voice in guild %s (idle timeout)", guild_id)
+
+    def _cancel_disconnect_task(self, guild_id: str) -> None:
+        """Cancel any pending disconnect timer for the guild."""
+        task = self._disconnect_tasks.pop(guild_id, None)
+        if task is not None and not task.done():
+            task.cancel()
+            log.debug("Cancelled pending disconnect task for guild %s", guild_id)
+
+    def _make_schedule_disconnect(self, guild_id: str):
+        """Return a callback that schedules disconnect 5 min after playback finishes."""
+        async def _on_finish(player, track):
+            # Cancel any existing disconnect task for safety, then start a new one
+            self._cancel_disconnect_task(guild_id)
+            task = asyncio.create_task(self._disconnect_voice_after_delay(guild_id, 300))
+            self._disconnect_tasks[guild_id] = task
+        return _on_finish
 
     async def _on_pre_prayer(self, guild_id: str) -> None:
         """Called 5 min before scheduled prayer — join voice early."""
@@ -241,6 +266,9 @@ class PrayerBot(discord.Client):
                 source_factory=self._source_factory,
             )
             self.players[guild_id] = player
+        else:
+            # Rebind voice_client on reuse — the old one may be stale/disconnected
+            player.voice_client = vc
 
         # Send text channel notification
         cfg = get_guild_config(self.db, guild_id)
@@ -255,6 +283,12 @@ class PrayerBot(discord.Client):
                             f"Join <#{cfg.voice_channel_id}> to listen."
                         )
 
+        # Cancel any pending disconnect timer (new prayer resets the countdown)
+        self._cancel_disconnect_task(guild_id)
+
+        # Schedule disconnect 5 minutes after playback FINISHES
+        player.on_finish(self._make_schedule_disconnect(guild_id))
+
         # Play the audio
         from provider.client import TrackResponse
         track = TrackResponse(
@@ -268,10 +302,7 @@ class PrayerBot(discord.Client):
         )
         await player.start(track)
 
-        # Schedule disconnect 5 minutes after playback
-        asyncio.create_task(self._disconnect_voice_after_delay(guild_id, 300))
-
-        log.info("Playing %s in guild %s (will disconnect 5 min after)", prayer_type.value, guild_id)
+        log.info("Playing %s in guild %s (will disconnect 5 min after playback ends)", prayer_type.value, guild_id)
         return True
 
     # ------------------------------------------------------------------ voice state tracking
@@ -383,6 +414,9 @@ class PrayerBot(discord.Client):
                     source_factory=self._source_factory,
                 )
                 self.players[guild_id] = player
+            else:
+                # Rebind voice_client on reuse — the old one may be stale/disconnected
+                player.voice_client = vc
 
             # Send text notification
             prayer_type = payload.get("prayer_type", "prayer")
@@ -398,6 +432,12 @@ class PrayerBot(discord.Client):
                                 f"Join <#{cfg.voice_channel_id}> to listen."
                             )
 
+            # Cancel any pending disconnect timer (new track resets the countdown)
+            self._cancel_disconnect_task(guild_id)
+
+            # Schedule disconnect 5 minutes after playback FINISHES
+            player.on_finish(self._make_schedule_disconnect(guild_id))
+
             from provider.client import TrackResponse
             track = TrackResponse(
                 track_id=track_id, title=prayer_type,
@@ -405,8 +445,6 @@ class PrayerBot(discord.Client):
                 provider_used="local", playlist_position=0, ready=True,
             )
             await player.start(track)
-            # Schedule disconnect 5 min after playback
-            asyncio.create_task(self._disconnect_voice_after_delay(guild_id, 300))
             return "ok:playing"
 
         elif command == "apply_server":
