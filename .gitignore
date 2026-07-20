@@ -27,3 +27,10 @@ secrets/
 .vscode/
 discord-radio-source/
 repomix-output.xml
+
+# Cypress
+cypress/screenshots/
+cypress/videos/
+cypress/downloads/
+node_modules/
+package-lock.json
