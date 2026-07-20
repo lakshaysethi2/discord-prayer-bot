@@ -179,7 +179,14 @@ async def save_prayers(
         enabled_val = f"enabled_{s.id}" in form_data
         if time_str:
             try:
-                t = time.fromisoformat(time_str)
+                # Accept both plain 'HH:MM' and full ISO timestamps '2024-01-01T02:00:00.000Z'
+                if 'T' in time_str:
+                    # ISO timestamp - extract UTC time portion only
+                    clean = time_str.replace('Z', '+00:00')
+                    dt = datetime.fromisoformat(clean)
+                    t = dt.time()
+                else:
+                    t = time.fromisoformat(time_str)
                 if prayer_str:
                     # Update prayer_type too
                     try:
