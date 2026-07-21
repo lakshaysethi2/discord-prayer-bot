@@ -258,7 +258,7 @@ class PrayerBot(discord.Client):
         if not vc or not vc.is_connected():
             return
 
-        # Ensure we don't interrupt a real prayer
+        # Initial guard: Ensure we don't interrupt a real prayer
         player = self.players.get(guild_id)
         if player and player.is_playing() and not (guild_id in self._tts_playing):
             return
@@ -268,6 +268,10 @@ class PrayerBot(discord.Client):
         if not filepath.exists():
             communicate = edge_tts.Communicate(text, "en-US-GuyNeural")
             await communicate.save(str(filepath))
+            
+        # Re-check guard after network await to avoid TOCTOU
+        if player and player.is_playing() and not (guild_id in self._tts_playing):
+            return
 
         scoped_state = GuildScopedState(self.db, guild_id)
         source = self._source_factory(str(filepath), 0, scoped_state.stream_volume_percent)
@@ -437,9 +441,11 @@ class PrayerBot(discord.Client):
                         asyncio.create_task(self._say_tts(guild_id, greeting))
 
         # 2. PAUSE/RESUME LOGIC
-        player = self.players.get(guild_id)
-        if player is None:
+        # Skip if TTS is currently playing to avoid clobbering prayer state
+        if guild_id in self._tts_playing:
             return
+
+        player = self.players.get(guild_id)
 
         channel = self._get_listening_channel(guild_id)
         if channel is None:
