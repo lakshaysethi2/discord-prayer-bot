@@ -15,6 +15,8 @@
     {% endif %}
   </div>
   <a href="/prayers/public/{{ guild_id }}" class="text-xs text-slate-400 hover:text-white">👁 Public view</a>
+  <button onclick="leaveVoice('{{ guild_id }}')"
+          class="text-xs rounded bg-red-900/50 hover:bg-red-800/50 border border-red-800/50 px-2 py-1 text-red-300" title="Make bot leave voice channel">🚪 Leave Voice</button>
 </div>
 
 <div class="text-xs text-slate-500 mb-4">🕐 <span id="tz-info">detecting...</span> — all times in your local timezone</div>
@@ -104,6 +106,23 @@ async function playNow(btn, scheduleId) {
     fb.className = 'rounded bg-red-900/40 border border-red-700 px-3 py-2 text-sm text-red-200 mb-3';
   }
   btn.textContent = '▶'; btn.disabled = false;
+  setTimeout(() => fb.className = 'hidden', 3000);
+}
+
+async function leaveVoice(guildId) {
+  const fb = document.getElementById('feedback');
+  try {
+    const r = await fetch('/controls', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      body: new URLSearchParams({guild_id: guildId, action: 'disconnect'})
+    });
+    fb.textContent = '🚪 Sent leave command — bot should disconnect shortly';
+    fb.className = 'rounded bg-emerald-900/40 border border-emerald-700 px-3 py-2 text-sm text-emerald-200 mb-3';
+  } catch(e) {
+    fb.textContent = '❌ Failed to send leave command';
+    fb.className = 'rounded bg-red-900/40 border border-red-700 px-3 py-2 text-sm text-red-200 mb-3';
+  }
   setTimeout(() => fb.className = 'hidden', 3000);
 }
 </script>
