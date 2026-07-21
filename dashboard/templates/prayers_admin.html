@@ -26,6 +26,13 @@
 {% endif %}
 <div id="feedback" class="hidden rounded px-3 py-2 text-sm mb-3"></div>
 
+<div class="flex gap-2 mb-4">
+  <button type="button" onclick="bulkAction('enable_all')"
+          class="flex-1 text-xs rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 py-2 text-slate-200">✅ Enable All</button>
+  <button type="button" onclick="bulkAction('disable_all')"
+          class="flex-1 text-xs rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 py-2 text-slate-200">❌ Disable All</button>
+</div>
+
 <form method="post" action="/prayers/save" id="schedule-form">
   <input type="hidden" name="guild_id" value="{{ guild_id }}">
 
@@ -124,6 +131,28 @@ async function leaveVoice(guildId) {
     fb.className = 'rounded bg-red-900/40 border border-red-700 px-3 py-2 text-sm text-red-200 mb-3';
   }
   setTimeout(() => fb.className = 'hidden', 3000);
+}
+
+async function bulkAction(action) {
+  const fb = document.getElementById('feedback');
+  const guildId = document.querySelector('input[name="guild_id"]').value;
+  try {
+    const r = await fetch('/prayers/bulk-action', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      body: new URLSearchParams({guild_id: guildId, action: action})
+    });
+    const data = await r.json();
+    if (data.ok) {
+      window.location.reload();
+    } else {
+      throw new Error(data.msg);
+    }
+  } catch(e) {
+    fb.textContent = '❌ Action failed: ' + e.message;
+    fb.className = 'rounded bg-red-900/40 border border-red-700 px-3 py-2 text-sm text-red-200 mb-3';
+    fb.classList.remove('hidden');
+  }
 }
 </script>
 {% endblock %}
