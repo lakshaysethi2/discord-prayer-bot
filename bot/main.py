@@ -341,6 +341,30 @@ class PrayerBot(discord.Client):
 
     # ------------------------------------------------------------------ prayer playback
 
+    async def _cleanup_notification(self, guild_id: str, player: Player) -> None:
+        """Delete the 'Now Playing' notification message for a guild."""
+        msg_id = player.state.now_playing_message_id
+        if not msg_id:
+            return
+            
+        cfg = get_guild_config(self.db, guild_id)
+        if not cfg or not cfg.text_channel_id:
+            return
+            
+        guild = self.get_guild(int(guild_id))
+        if not guild:
+            return
+            
+        text_channel = guild.get_channel(int(cfg.text_channel_id))
+        if not text_channel:
+            return
+            
+        with contextlib.suppress(Exception):
+            old_msg = await text_channel.fetch_message(msg_id)
+            await old_msg.delete()
+        
+        player.state.now_playing_message_id = None
+
     async def _start_prayer_playback(self, guild_id: str, prayer_type: PrayerType, filename: str) -> bool:
         """Shared logic for starting a prayer (scheduled, adhoc, or slash)."""
         media_path = MEDIA_DIR / filename
@@ -370,18 +394,23 @@ class PrayerBot(discord.Client):
             # Rebind voice_client on reuse — the old one may be stale/disconnected
             player.voice_client = vc
 
-        # Send text channel notification
+        # Send text channel notification & cleanup old one
         cfg = get_guild_config(self.db, guild_id)
         if cfg and cfg.text_channel_id:
             guild = self.get_guild(int(guild_id))
             if guild:
                 text_channel = guild.get_channel(int(cfg.text_channel_id))
                 if text_channel:
+                    # Cleanup old notification if it exists
+                    await self._cleanup_notification(guild_id, player)
+                    
+                    # Send new notification
                     with contextlib.suppress(Exception):
-                        await text_channel.send(
+                        msg = await text_channel.send(
                             f"🕌 **{prayer_type.value.title()} Prayer** is now playing. "
                             f"Join <#{cfg.voice_channel_id}> to listen."
                         )
+                        player.state.now_playing_message_id = msg.id
 
         # Cancel any pending disconnect timer (new prayer resets the countdown)
         self._cancel_disconnect_task(guild_id)
