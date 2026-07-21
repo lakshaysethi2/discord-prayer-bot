@@ -72,11 +72,25 @@
             <option value="en-GB-SoniaNeural" {{ "selected" if s.tts_voice == "en-GB-SoniaNeural" else "" }}>British (Sonia)</option>
           </select>
         </label>
+
+        <label class="text-sm">
+          <span class="block text-slate-400 mb-1">Logging channel</span>
+          <select name="logging_channel_id"
+                  class="w-full rounded bg-slate-800 border border-slate-700 px-2 py-1.5 text-slate-100">
+            <option value="">— none —</option>
+            {% for tc in s.text_channels %}
+              <option value="{{ tc.channel_id }}" {{ "selected" if s.logging_channel_id == tc.channel_id else "" }}>
+                {{ tc.channel_name }}
+              </option>
+            {% endfor %}
+          </select>
+        </label>
       </div>
 
       <div class="mt-3 flex items-center justify-between">
         <div class="flex gap-2 text-xs">
           <a href="/prayers/{{ s.guild_id }}" class="text-indigo-400 hover:text-indigo-300">📅 Schedule</a>
+          <a href="/history/{{ s.guild_id }}" class="text-slate-400 hover:text-slate-300">📜 History</a>
           <a href="/prayers/public/{{ s.guild_id }}" class="text-slate-400 hover:text-slate-300">👁 Public</a>
         </div>
         <button type="submit"

@@ -112,6 +112,7 @@ SCHEMA: tuple[str, ...] = (
         enabled           BOOLEAN DEFAULT 0,
         voice_channel_id  TEXT,
         text_channel_id   TEXT,
+        logging_channel_id TEXT,
         timezone_offset_hours REAL DEFAULT 0.0,
         tts_voice         TEXT DEFAULT 'en-US-GuyNeural',
         updated_at        DATETIME
@@ -207,6 +208,7 @@ class GuildConfig:
     enabled: bool
     voice_channel_id: str | None
     text_channel_id: str | None
+    logging_channel_id: str | None = None
     timezone_offset_hours: float = 0.0
     tts_voice: str = "en-US-GuyNeural"
     updated_at: str | None = None

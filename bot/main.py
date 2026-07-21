@@ -65,7 +65,9 @@ class PrayerBot(discord.Client):
         self._running = False
         self.tree = discord.app_commands.CommandTree(self)
         self._tts_playing: set[str] = set() # guild_id -> is_tts_active
+        self._tts_queues: dict[str, asyncio.Queue] = {} # guild_id -> Queue[str]
         self._status_task: asyncio.Task | None = None
+        self._cleanup_task: asyncio.Task | None = None
 
     # ------------------------------------------------------------------ lifecycle
 
@@ -77,6 +79,9 @@ class PrayerBot(discord.Client):
             # await self.tree.sync(guild=discord.Object(id=YOUR_GUILD_ID))
             await self.tree.sync()
             log.info("Slash commands synced globally")
+            
+            # Start background tasks
+            self._cleanup_task = asyncio.create_task(self._automatic_cache_cleanup())
         except Exception as exc:
             log.exception("Failed to sync slash commands in setup_hook: %s", exc)
 
@@ -105,9 +110,13 @@ class PrayerBot(discord.Client):
         # Start the voice status update loop if not already running
         if not self._status_task or self._status_task.done():
             self._status_task = asyncio.create_task(self._voice_status_loop())
-
+            
+        # Log startup complete
         log.info("Prayer Bot ready — %d guilds, %d schedulers active",
                  len(self.guilds), len(self.schedulers))
+        
+        # Initial status update immediately after startup
+        asyncio.create_task(self._update_all_voice_statuses())
 
     async def _discover_guild(self, guild: discord.Guild) -> None:
         """Discover a guild's channels and create default config (discord-radio pattern)."""
@@ -235,6 +244,7 @@ class PrayerBot(discord.Client):
                 self.voice_connections.pop(guild_id, None)
                 await vc.disconnect()
                 log.info("Disconnected from voice in guild %s (idle timeout)", guild_id)
+                await self._log_to_channel(guild_id, "Disconnected from voice channel due to idle timeout.")
 
     def _cancel_disconnect_task(self, guild_id: str) -> None:
         """Cancel any pending disconnect timer for the guild."""
@@ -246,11 +256,25 @@ class PrayerBot(discord.Client):
     async def _make_schedule_disconnect(self, guild_id: str):
         """Return a callback that schedules disconnect 5 min after playback finishes."""
         async def _on_finish(player, track):
+            # Cleanup notification message
+            await self._cleanup_notification(guild_id, player)
+
             # 1. Say "Thank you all for joining..." via TTS
             try:
                 vc = self.voice_connections.get(guild_id)
                 if vc and vc.is_connected():
-                    await self._say_tts(guild_id, "Thank you all for joining, god bless you.")
+                    # Collect names of people who stayed
+                    listeners = [m.display_name for m in vc.channel.members if not m.bot]
+                    if listeners:
+                        if len(listeners) == 1:
+                            names_text = listeners[0]
+                        elif len(listeners) == 2:
+                            names_text = f"{listeners[0]} and {listeners[1]}"
+                        else:
+                            names_text = f"{', '.join(listeners[:-1])}, and {listeners[-1]}"
+                        await self._say_tts(guild_id, f"Thank you {names_text} for joining, god bless you.")
+                    else:
+                        await self._say_tts(guild_id, "Thank you all for joining, god bless you.")
             except Exception as exc:
                 log.exception("Post-prayer TTS failed: %s", exc)
 
@@ -265,12 +289,32 @@ class PrayerBot(discord.Client):
         return _on_finish
 
     async def _say_tts(self, guild_id: str, text: str) -> None:
-        """Generate and play TTS audio in the guild's voice channel."""
+        """Add a TTS message to the guild's queue."""
+        if guild_id not in self._tts_queues:
+            self._tts_queues[guild_id] = asyncio.Queue()
+            asyncio.create_task(self._tts_worker(guild_id))
+            
+        await self._tts_queues[guild_id].put(text)
+
+    async def _tts_worker(self, guild_id: str) -> None:
+        """Process TTS messages sequentially for a guild."""
+        queue = self._tts_queues[guild_id]
+        while not self.is_closed():
+            text = await queue.get()
+            try:
+                await self._process_tts(guild_id, text)
+            except Exception:
+                log.exception("TTS worker error in guild %s", guild_id)
+            finally:
+                queue.task_done()
+
+    async def _process_tts(self, guild_id: str, text: str) -> None:
+        """Generate and play a single TTS audio clip."""
         vc = self.voice_connections.get(guild_id)
         if not vc or not vc.is_connected():
             return
 
-        # Initial guard: Ensure we don't interrupt a real prayer
+        # Guard: Ensure we don't interrupt a real prayer
         player = self.players.get(guild_id)
         if player and player.is_playing() and not (guild_id in self._tts_playing):
             return
@@ -279,7 +323,6 @@ class PrayerBot(discord.Client):
         cfg = get_guild_config(self.db, guild_id)
         voice = cfg.tts_voice if cfg and cfg.tts_voice else "en-US-GuyNeural"
         
-        # Cache key should include the voice to avoid playback with wrong voice from cache
         cache_key = hashlib.sha1(f"{voice}:{text}".encode()).hexdigest()
         filepath = TTS_DIR / f"tts_{cache_key}.mp3"
         
@@ -287,8 +330,7 @@ class PrayerBot(discord.Client):
             communicate = edge_tts.Communicate(text, voice)
             await communicate.save(str(filepath))
             
-        # Re-check guard after network await to avoid TOCTOU
-        # Re-fetch player to avoid stale reference
+        # Re-check guard after network await
         player = self.players.get(guild_id)
         if player and player.is_playing() and not (guild_id in self._tts_playing):
             return
@@ -296,23 +338,44 @@ class PrayerBot(discord.Client):
         scoped_state = GuildScopedState(self.db, guild_id)
         source = self._source_factory(str(filepath), 0, scoped_state.stream_volume_percent)
         
-        # Stop any current playback (including previous TTS)
         if vc.is_playing():
             vc.stop()
             
+        done_event = asyncio.Event()
         def after_tts(exc):
             if exc:
                 log.warning("TTS error in guild %s: %s", guild_id, exc)
             self._tts_playing.discard(guild_id)
+            self.loop.call_soon_threadsafe(done_event.set)
 
         self._tts_playing.add(guild_id)
         vc.play(source, after=after_tts)
-        log.info("Played TTS in guild %s: %s", guild_id, text)
+        
+        # Wait for this specific clip to finish before worker picks up next
+        await done_event.wait()
+        log.debug("Finished playing TTS in guild %s: %s", guild_id, text)
+
+    async def _log_to_channel(self, guild_id: str, message: str) -> None:
+        """Send a log message to the guild's configured logging channel."""
+        cfg = get_guild_config(self.db, guild_id)
+        if not cfg or not cfg.logging_channel_id:
+            return
+            
+        guild = self.get_guild(int(guild_id))
+        if not guild:
+            return
+            
+        channel = guild.get_channel(int(cfg.logging_channel_id))
+        if channel:
+            with contextlib.suppress(Exception):
+                await channel.send(f"📋 **Log:** {message}")
 
     async def _on_pre_prayer(self, guild_id: str) -> None:
         """Called 10 min before scheduled prayer — join voice early."""
         self._cancel_disconnect_task(guild_id)
-        await self._ensure_voice_connected(guild_id)
+        vc = await self._ensure_voice_connected(guild_id)
+        if vc:
+            await self._log_to_channel(guild_id, f"Joined voice channel <#{vc.channel.id}> 10 minutes before prayer.")
 
     def _source_factory(self, path: str, seek_seconds: float, volume_percent: int):
         """Build FFmpegPCMAudio for local MP3 files."""
@@ -432,6 +495,7 @@ class PrayerBot(discord.Client):
         await player.start(track)
 
         log.info("Playing %s in guild %s (will disconnect 5 min after playback ends)", prayer_type.value, guild_id)
+        await self._log_to_channel(guild_id, f"Started playing **{prayer_type.value.title()}** prayer.")
         return True
 
     async def _play_prayer_callback(self, guild_id: str, prayer_type: PrayerType, filename: str) -> bool:
@@ -631,6 +695,7 @@ class PrayerBot(discord.Client):
             if vc and vc.is_connected():
                 await vc.disconnect()
                 log.info("Manually disconnected from voice in guild %s", guild_id)
+                await self._log_to_channel(guild_id, "Manually disconnected from voice channel.")
                 return "ok:disconnected"
             return "ok:not_connected"
 
@@ -669,6 +734,26 @@ class PrayerBot(discord.Client):
                 await vc.disconnect()
         self.db.close()
         await super().close()
+
+    async def _automatic_cache_cleanup(self) -> None:
+        """Periodically delete TTS files from data/tts that are older than 30 days."""
+        while not self.is_closed():
+            try:
+                import time
+                now = time.time()
+                retention_period = 30 * 24 * 60 * 60 # 30 days in seconds
+                
+                if TTS_DIR.exists():
+                    for f in TTS_DIR.iterdir():
+                        if f.is_file() and f.suffix == ".mp3":
+                            if now - f.stat().st_mtime > retention_period:
+                                f.unlink()
+                                log.info("Deleted old TTS cache file: %s", f.name)
+            except Exception as exc:
+                log.exception("Automatic cache cleanup failed: %s", exc)
+                
+            # Run once a day (86400 seconds)
+            await asyncio.sleep(86400)
 
     # ------------------------------------------------------------------ status loop
 
