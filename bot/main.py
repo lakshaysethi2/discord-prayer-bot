@@ -438,7 +438,15 @@ class PrayerBot(discord.Client):
                     # Requirement: Greet if before prayer starts. 
                     if minutes_left is not None and minutes_left <= 10 and minutes_left > 0:
                         greeting = f"Welcome {member.display_name}, thank you for coming, we will start the prayer in {minutes_left} minutes."
-                        asyncio.create_task(self._say_tts(guild_id, greeting))
+                        
+                        async def _greet_after_delay():
+                            await asyncio.sleep(5)  # Wait 5 seconds for user to fully connect
+                            # Re-verify they are still in the channel before speaking
+                            current_vc = self.voice_connections.get(guild_id)
+                            if current_vc and current_vc.is_connected() and member in current_vc.channel.members:
+                                await self._say_tts(guild_id, greeting)
+                        
+                        asyncio.create_task(_greet_after_delay())
 
         # 2. PAUSE/RESUME LOGIC
         # Skip if TTS is currently playing to avoid clobbering prayer state
