@@ -538,6 +538,8 @@ class PrayerBot(discord.Client):
                 return f"ok:volume:{vol}"
             
             if guild_id:
+                # Clamp before saving to scoped state
+                vol = min(450, max(50, vol))
                 scoped_state = GuildScopedState(self.db, guild_id)
                 scoped_state.stream_volume_percent = vol
                 return f"ok:volume_saved:{vol}"

@@ -26,6 +26,32 @@
 {% endif %}
 <div id="feedback" class="hidden rounded px-3 py-2 text-sm mb-3"></div>
 
+<div class="mt-2 mb-6 rounded-lg bg-slate-900 border border-slate-800 p-4">
+  <h2 class="font-semibold mb-3 text-sm text-slate-300">🎛️ Live Controls & Volume</h2>
+
+  <div class="flex flex-wrap items-center gap-4 mb-4">
+    <div class="flex items-center gap-2">
+      <span class="text-xs text-slate-400">Volume:</span>
+      <strong id="volume-display" class="text-sm text-indigo-400">{{ current_volume }}%</strong>
+    </div>
+    <input type="range" id="volume-slider" min="50" max="450" value="{{ current_volume }}"
+           oninput="document.getElementById('volume-label').textContent=this.value+'%'"
+           class="w-full sm:w-48 h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer">
+    <span id="volume-label" class="text-xs text-slate-500 w-10">{{ current_volume }}%</span>
+    <button type="button" onclick="setVolume('{{ guild_id }}')"
+            class="rounded bg-indigo-600 hover:bg-indigo-500 px-3 py-1 text-xs font-medium transition-colors">Apply Volume</button>
+  </div>
+
+  <div class="flex flex-wrap gap-2 pt-2 border-t border-slate-800/50">
+    <button onclick="sendControl('{{ guild_id }}', 'pause')"
+            class="flex-1 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 py-2 text-xs transition-colors">⏸ Pause</button>
+    <button onclick="sendControl('{{ guild_id }}', 'resume')"
+            class="flex-1 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 py-2 text-xs transition-colors">▶ Resume</button>
+    <button onclick="sendControl('{{ guild_id }}', 'skip')"
+            class="flex-1 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 py-2 text-xs transition-colors">⏭ Skip</button>
+  </div>
+</div>
+
 <div class="flex gap-2 mb-4">
   <button type="button" onclick="bulkAction('enable_all')"
           class="flex-1 text-xs rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 py-2 text-slate-200">✅ Enable All</button>
@@ -150,6 +176,50 @@ async function bulkAction(action) {
     }
   } catch(e) {
     fb.textContent = '❌ Action failed: ' + e.message;
+    fb.className = 'rounded bg-red-900/40 border border-red-700 px-3 py-2 text-sm text-red-200 mb-3';
+    fb.classList.remove('hidden');
+  }
+}
+
+async function setVolume(guildId) {
+  const slider = document.getElementById('volume-slider');
+  const display = document.getElementById('volume-display');
+  const vol = slider.value;
+  const fb = document.getElementById('feedback');
+  display.textContent = vol + '%';
+  try {
+    const r = await fetch('/controls/volume', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      body: new URLSearchParams({guild_id: guildId, volume_percent: vol})
+    });
+    const data = await r.json();
+    fb.textContent = '✅ Volume set to ' + vol + '%';
+    fb.className = 'rounded bg-emerald-900/40 border border-emerald-700 px-3 py-2 text-sm text-emerald-200 mb-3';
+    fb.classList.remove('hidden');
+    setTimeout(() => fb.classList.add('hidden'), 2000);
+  } catch(e) { 
+    console.error(e); 
+    fb.textContent = '❌ Failed to set volume';
+    fb.className = 'rounded bg-red-900/40 border border-red-700 px-3 py-2 text-sm text-red-200 mb-3';
+    fb.classList.remove('hidden');
+  }
+}
+
+async function sendControl(guildId, action) {
+  const fb = document.getElementById('feedback');
+  try {
+    const r = await fetch('/controls', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      body: new URLSearchParams({guild_id: guildId, action: action})
+    });
+    fb.textContent = '✅ ' + action.toUpperCase() + ' sent';
+    fb.className = 'rounded bg-emerald-900/40 border border-emerald-700 px-3 py-2 text-sm text-emerald-200 mb-3';
+    fb.classList.remove('hidden');
+    setTimeout(() => fb.classList.add('hidden'), 2000);
+  } catch(e) {
+    fb.textContent = '❌ ' + action.toUpperCase() + ' failed';
     fb.className = 'rounded bg-red-900/40 border border-red-700 px-3 py-2 text-sm text-red-200 mb-3';
     fb.classList.remove('hidden');
   }
