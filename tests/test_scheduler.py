@@ -43,12 +43,14 @@ def test_scheduler_pre_join():
             assert len(pre_join_calls) == 1
             assert len(played_calls) == 0
             
-            # T-9 minutes: no new pre-join (already in set)
-            now = datetime(2024, 1, 1, 11, 56, 0, tzinfo=pytz.utc)
+            # Restart scenario: Bot starts at T-8 minutes
+            # Should still trigger pre-join if not already in set
+            scheduler._pre_joined.clear()
+            now = datetime(2024, 1, 1, 11, 57, 0, tzinfo=pytz.utc)
             with patch('bot.prayer_scheduler.datetime') as mock_datetime:
                 mock_datetime.now.return_value = now
                 await scheduler._check_and_play()
-            assert len(pre_join_calls) == 1
+            assert len(pre_join_calls) == 2
             
             # T-0 minutes: play prayer
             now = datetime(2024, 1, 1, 12, 5, 0, tzinfo=pytz.utc)

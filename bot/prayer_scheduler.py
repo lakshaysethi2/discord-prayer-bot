@@ -69,38 +69,44 @@ class PrayerScheduler:
         self._pre_joined = {k for k in self._pre_joined if k.split(":")[0] >= today_str}
         self._played = {k for k in self._played if k.startswith(today_str)}
 
-        # Also check 10 minutes ahead for pre-join
-        pre_now = now + timedelta(minutes=10)
-        pre_join_time = pre_now.time().replace(second=0, microsecond=0)
-        pre_join_weekday = pre_now.weekday()
-        pre_date_str = pre_now.date().isoformat()
-
         schedules = get_weekly_schedule(self.db, self.guild_id)
 
         for sched in schedules:
             if not sched.enabled:
                 continue
 
-            pre_key = f"{pre_date_str}:{sched.day_of_week}:{sched.prayer_type.value}"
+            # Calculate the actual datetime for this schedule entry in the current week
+            days_ahead = (sched.day_of_week - weekday) % 7
+            prayer_dt = now.replace(
+                hour=sched.time_utc.hour,
+                minute=sched.time_utc.minute,
+                second=0,
+                microsecond=0
+            ) + timedelta(days=days_ahead)
+            
+            # If the calculated prayer_dt is in the past (e.g., it's Monday 10am and we're looking at Monday 8am)
+            # and days_ahead is 0, we don't want to trigger.
+            # But % 7 handles the future. If we want the *next* occurrence, we'd add 7.
+            # For the pre-join, we only care about occurrences in the next 10 minutes.
+            
+            pre_key = f"{prayer_dt.date().isoformat()}:{sched.day_of_week}:{sched.prayer_type.value}"
             play_key = f"{today_str}:{sched.day_of_week}:{sched.prayer_type.value}"
 
-            # Pre-join: 10 minutes before prayer
-            if (self.on_pre_prayer
-                    and sched.day_of_week == pre_join_weekday
-                    and sched.time_utc == pre_join_time
+            # Pre-join logic: Trigger if the prayer is starting within the next 10 minutes
+            # but has not started yet.
+            if (self.on_pre_prayer 
+                    and now < prayer_dt <= (now + timedelta(minutes=10))
                     and pre_key not in self._pre_joined):
                 self._pre_joined.add(pre_key)
                 try:
                     await self.on_pre_prayer(self.guild_id)
-                    log.info("Pre-joined voice for %s in guild %s (10 min before)",
+                    log.info("Pre-joined voice for %s in guild %s (within 10 min window)",
                              sched.prayer_type.value, self.guild_id)
                 except Exception as exc:
                     log.exception("Pre-join failed: %s", exc)
 
             # Exact match: play now
-            if sched.day_of_week != weekday:
-                continue
-            if sched.time_utc == current_time and play_key not in self._played:
+            if sched.day_of_week == weekday and sched.time_utc == current_time and play_key not in self._played:
                 self._played.add(play_key)
                 filename = get_audio_filename(sched.prayer_type)
                 success = await self.play_prayer(
