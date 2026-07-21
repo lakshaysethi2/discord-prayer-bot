@@ -36,9 +36,16 @@
 
 <div class="mb-6 flex flex-wrap items-center gap-3">
   <div class="inline-block rounded-full bg-slate-800 px-4 py-1.5 text-xs text-slate-400" id="tz-badge-container">
-    <span>🕐 Local Timezone:</span>
-    <span class="text-slate-200 ml-1">{{ current_tz }}</span>
+    <span>🕐 Perspective:</span>
+    <select id="tz-selector" onchange="updatePerspective(this.value)"
+            class="bg-transparent border-none text-slate-200 outline-none cursor-pointer">
+      <option value="local">Detecting...</option>
+      {% for tz in all_timezones %}
+      <option value="{{ tz }}" {% if tz == current_tz %}selected{% endif %}>{{ tz }}</option>
+      {% endfor %}
+    </select>
   </div>
+  <span id="tz-info" class="text-[10px] text-slate-600"></span>
 </div>
 
 {% set emojis = {"buddhist": "☸️", "christian": "✝️", "jewish": "✡️", "sufi": "☪️", "vedantic": "🕉️", "three_daily": "🌅"} %}
@@ -71,18 +78,46 @@
 {% endif %}
 
 <script>
-const nextEl = document.querySelector('.local-time-next');
-if (nextEl) {
-    const d = new Date(nextEl.dataset.iso);
-    const tzName = "{{ current_tz }}";
-    
-    // Display using the saved timezone
-    const options = { timeZone: tzName, hour: '2-digit', minute: '2-digit' };
-    const localTime = d.toLocaleTimeString('en-US', options);
-    const localDay = d.toLocaleDateString('en-US', { timeZone: tzName, weekday: 'long' });
-    const localDate = d.toLocaleDateString('en-US', { timeZone: tzName, day: 'numeric', month: 'short' });
-    
-    nextEl.innerHTML = localTime + ' · ' + localDay + ' ' + localDate + ' <span class="text-slate-500">' + tzName + '</span>';
+// Browser timezone for initial default if not set
+const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+const savedTz = "{{ current_tz }}";
+let currentTz = savedTz === 'UTC' ? browserTz : savedTz;
+
+// If we are defaulting to browser, update the selector
+if (savedTz === 'UTC') {
+  const selector = document.getElementById('tz-selector');
+  if (selector) {
+    selector.value = currentTz;
+  }
 }
+
+function updatePerspective(newTz) {
+  currentTz = newTz;
+  
+  // 1. Update upcoming prayer card
+  const nextEl = document.querySelector('.local-time-next');
+  if (nextEl) {
+    const d = new Date(nextEl.dataset.iso);
+    const options = { timeZone: currentTz, hour: '2-digit', minute: '2-digit' };
+    const localTime = d.toLocaleTimeString('en-US', options);
+    const localDay = d.toLocaleDateString('en-US', { timeZone: currentTz, weekday: 'long' });
+    const localDate = d.toLocaleDateString('en-US', { timeZone: currentTz, day: 'numeric', month: 'short' });
+    nextEl.innerHTML = localTime + ' · ' + localDay + ' ' + localDate + ' <span class="text-slate-500">' + currentTz + '</span>';
+  }
+
+  // 2. Update schedule cards from their UTC source
+  document.querySelectorAll('[data-utc-time]').forEach(card => {
+    const [h, m] = card.dataset.utcTime.split(':').map(Number);
+    const d = new Date();
+    d.setUTCHours(h, m, 0, 0);
+    
+    // Display using selected timezone
+    const localStr = d.toLocaleTimeString('en-US', { timeZone: currentTz, hour12: false, hour: '2-digit', minute: '2-digit' });
+    card.querySelector('.local-time').textContent = localStr;
+  });
+}
+
+// Init
+updatePerspective(currentTz);
 </script>
 {% endblock %}

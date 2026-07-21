@@ -42,6 +42,9 @@ from db.prayers import (
     log_voice_leave,
 )
 
+import pytz
+from datetime import datetime, time, timedelta
+
 log = logging.getLogger(__name__)
 
 TOKEN = os.environ.get("DISCORD_BOT_TOKEN", "")
@@ -312,25 +315,29 @@ class PrayerBot(discord.Client):
             asyncio.create_task(self._update_all_voice_statuses())
         return _on_finish
 
-    async def _say_tts(self, guild_id: str, text: str) -> None:
+    async def _say_tts(self, guild_id: str, text: str, done_event: asyncio.Event | None = None) -> None:
         """Add a TTS message to the guild's queue."""
         if guild_id not in self._tts_queues:
             self._tts_queues[guild_id] = asyncio.Queue()
             asyncio.create_task(self._tts_worker(guild_id))
             
-        await self._tts_queues[guild_id].put(text)
+        await self._tts_queues[guild_id].put((text, done_event))
 
     async def _tts_worker(self, guild_id: str) -> None:
         """Process TTS messages sequentially for a guild."""
         queue = self._tts_queues[guild_id]
         while not self.is_closed():
-            text = await queue.get()
             try:
-                await self._process_tts(guild_id, text)
+                item = await queue.get()
+                text, done_event = item if isinstance(item, tuple) else (item, None)
+                try:
+                    await self._process_tts(guild_id, text)
+                finally:
+                    if done_event:
+                        done_event.set()
+                    queue.task_done()
             except Exception:
                 log.exception("TTS worker error in guild %s", guild_id)
-            finally:
-                queue.task_done()
 
     async def _process_tts(self, guild_id: str, text: str) -> None:
         """Generate and play a single TTS audio clip."""
@@ -366,18 +373,19 @@ class PrayerBot(discord.Client):
         if vc.is_playing():
             vc.stop()
             
-        done_event = asyncio.Event()
+        playback_done = asyncio.Event()
         def after_tts(exc):
             if exc:
                 log.warning("TTS error in guild %s: %s", guild_id, exc)
             self._tts_playing.discard(guild_id)
-            self.loop.call_soon_threadsafe(done_event.set)
+            # Safe call back into the main loop
+            self.loop.call_soon_threadsafe(playback_done.set)
 
         self._tts_playing.add(guild_id)
         vc.play(source, after=after_tts)
         
         # Wait for this specific clip to finish before worker picks up next
-        await done_event.wait()
+        await playback_done.wait()
         log.debug("Finished playing TTS in guild %s: %s", guild_id, text)
 
     async def _log_to_channel(self, guild_id: str, message: str) -> None:
@@ -469,14 +477,9 @@ class PrayerBot(discord.Client):
         # Adhoc specific flow: 5s pause, announcement, 5s pause
         if is_adhoc:
             await asyncio.sleep(5)
-            # Create a temporary event to wait for this specific announcement to finish
+            # Use the queue and wait for the announcement to finish
             announce_done = asyncio.Event()
-            
-            async def _announce_and_set():
-                await self._process_tts(guild_id, f"Reciting {prayer_type.value.title()} prayers.")
-                announce_done.set()
-                
-            asyncio.create_task(_announce_and_set())
+            await self._say_tts(guild_id, f"Reciting {prayer_type.value.title()} prayers.", done_event=announce_done)
             await announce_done.wait()
             await asyncio.sleep(5)
 
@@ -553,8 +556,6 @@ class PrayerBot(discord.Client):
         if not schedules:
             return None
             
-        import pytz
-        from datetime import datetime, timedelta
         now = datetime.now(pytz.UTC)
         current_weekday = now.weekday()
         
