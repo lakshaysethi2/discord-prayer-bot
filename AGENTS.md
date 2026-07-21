@@ -4,92 +4,62 @@
 - Own requirements, acceptance criteria, coordination.
 - Confirmed user stories (`docs/user_stories.md`).
 - Confirmed timezone rules: UTC storage, browser-based conversion.
-- Confirmed voice on-demand: join 5 min before, leave 5 min after.
+- Confirmed voice on-demand: join 10 min before, leave 5 min after.
 
 ## Coding Agents
 - **arena-ai-coding-agent** (primary): Implemented bot core, DB, dashboard, PR framework, and post-PR fixes.
 - **arena-agent** (co-author): Assisted with code review and branch management.
-- **pi** (e2e/integration): Fixed PR #5 integration issues, wired Discord bot, added timezone browser detection, voice on-demand behavior, ad-hoc playback, landing page, navigation, login flow, CHANGELOG.md, voice fix (libopus0 + stale commands), volume controls, Tailwind dark theme UI redesign.
+- **pi** (e2e/integration): Fixed PR #5 integration issues, wired Discord bot, added timezone browser detection, voice fix, volume controls, Tailwind UI redesign.
+- **latest-agent** (current): Implemented 10-min pre-join, slash commands (/start, /exit), TTS greetings/blessings with sequential queue, notification cleanup, logging channel, guild-scoped state, health checks, and `make update` deployment command.
 
-## Agent Rules
+## 🤖 Agent Rules (Strict)
 
-- **Update CHANGELOG.md before every `git commit` and `git push`.** All agents must add entries to the [Unreleased] section summarizing changes made in the current session.
-- **Read and maintain `USER_REQUIREMENTS.md`.** Agents must read this file at the start of every session to understand requirements and prevent regressions. When a new requirement is introduced, update the file with the requirement and its acceptance criteria. When a requirement changes or a conflict arises, question the user — do not silently override existing requirements.
+- **Update CHANGELOG.md before every `git commit` and `git push`.**
+- **Maintain `USER_REQUIREMENTS.md`.** Question any conflicts with existing requirements.
+- **Full Type Hinting.** All new functions/methods must have explicit type hints for arguments and return values.
+- **Guild Scoping.** `BotState` is now strictly guild-scoped via `GuildScopedState`. Never use global state keys for playback position or pause status.
+- **Verification.** Always run `source .venv/bin/activate && export PYTHONPATH=. && pytest` before pushing.
+- **Non-blocking Discord calls.** Use `asyncio.create_task` or `asyncio.gather` for non-critical Discord I/O (like greetings) in event handlers to prevent blocking the main state logic.
 
 ## Bot Components
 
 | Component | File | Role |
 |---|---|---|
-| **PrayerBot** | `bot/main.py` | Discord client: guild discovery, voice on-demand, command queue, text notifications |
-| **Player** | `bot/player_framework.py` | FFmpeg audio playback with pause/resume/skip/volume (from discord-radio) |
-| **BotState** | `bot/state_framework.py` | Typed key/value store for playback state (from discord-radio) |
-| **Scheduler** | `bot/scheduler_framework.py` | Background tasks: checkpoints, monthly reset, command polling (from discord-radio) |
-| **PrayerScheduler** | `bot/prayer_scheduler.py` | 30s loop: checks prayer times, triggers pre-join 5 min before, calls play callback |
-| **SessionTracker** | `bot/tracker.py` | Voice session tracking with partial credit and crash recovery (from discord-radio) |
-| **Milestones** | `bot/milestones.py` | Watch-time milestones + Now Playing embed (from discord-radio) |
-| **ApplyServer** | `bot/apply_server.py` | Live config reconciliation without restart (from discord-radio) |
+| **PrayerBot** | `bot/main.py` | Discord client: guild discovery, voice on-demand, slash commands, TTS queue management, logging channel |
+| **Player** | `bot/player_framework.py` | FFmpeg audio engine. Updated to support provider-less resume for local prayers. |
+| **BotState** | `bot/state_framework.py` | Guild-scoped state storage. Ensures isolation between Discord servers. |
+| **PrayerScheduler** | `bot/prayer_scheduler.py` | 30s loop: checks prayer times, triggers pre-join 10 min before. Uses date-scoped markers to prevent double-play. |
+| **TTS Queue** | `bot/main.py` | Per-guild `asyncio.Queue` for greetings/blessings to prevent audio overlaps. |
 
-## DB Layer
+## DB Layer (`db/models.py` is the Source of Truth)
 
 | Component | File | Role |
 |---|---|---|
-| **Database** | `db/database.py` | SQLite with WAL, migrations, bot_state I/O, column backfills |
-| **Models** | `db/models.py` | DDL schemas, dataclasses, enums, MILESTONES, BotStateKey |
-| **Prayers** | `db/prayers.py` | Schedule CRUD, prayer logging, delegates guild config to guilds.py |
-| **Guilds** | `db/guilds.py` | Guild config, channel discovery/caching, admin writes (from discord-radio) |
-
-## Dashboard
-
-| Component | File | Role |
-|---|---|---|
-| **App** | `dashboard/app.py` | FastAPI app entry |
-| **Routes** | `dashboard/prayers_routes.py` | Admin schedule, public view, servers page, login, ad-hoc play |
-| **Auth** | `dashboard/auth.py` | Bearer token + cookie auth with hmac.compare_digest |
-| **Commands** | `dashboard/commands.py` | SQLite-based control-plane command queue (skip, pause, resume, volume) |
-| **Templates** | `dashboard/templates/*.html` | landing, servers, prayers_admin, prayers_public |
-
-## Provider
-
-| Component | File | Role |
-|---|---|---|
-| **FileProviderClient** | `provider/client.py` | HTTP client for track fetching, retry/backoff (from discord-radio, used for TrackResponse model) |
-
-## Agent Definition Files (per user request)
-- `agents/pm_agent.md` — Requirements, user stories, timezone rules
-- `agents/qa_agent.md` — Test plan (scheduler, dashboard, mock playback, live apply)
-- `agents/devops_agent.md` — Docker, healthchecks, CI
-- `agents/security_agent.md` — Auth middleware spec, env audit checklist
-- `agents/content_agent.md` — Media inventory, LFS tracking, download script
+| **Database** | `db/database.py` | SQLite connection with WAL and automatic migrations. |
+| **GuildConfig** | `db/guilds.py` | Config storage including `voice_channel_id`, `logging_channel_id`, and `tts_voice`. |
+| **Prayers** | `db/prayers.py` | Schedule CRUD and prayer event logging. |
 
 ## Key Design Decisions
 
-- **Server = UTC always.** All prayer times stored as `time_utc`. Browser converts to/from local timezone.
-- **Voice on-demand.** Bot joins voice 5 min before scheduled prayer, leaves 5 min after. No persistent voice connection.
-- **Dashboard auth.** Cookie-based login at `/login`. All admin routes check `prayer_session` cookie or `Authorization: Bearer` header.
-- **Live config apply.** Dashboard changes take effect within 30s via `dashboard_commands` queue — no restart needed.
-- **Channel auto-discovery.** Channels cached from Discord on bot startup/join; dashboard shows dropdowns instead of text inputs.
+- **Server = UTC always.** All prayer times stored as `time_utc` (HH:MM:SS).
+- **Voice on-demand.** Bot joins 10 min before, leaves 5 min after.
+- **Notification Cleanup.** Bot deletes its previous "Now Playing" message when a prayer ends or a new one starts to reduce channel spam.
+- **Status Blips.** Bot temporarily joins voice every 30m just to set the "Voice Channel Status" (text next to channel name), then leaves.
+- **Slash Commands.** Preferred adhoc method. Requires `manage_guild` permission.
+
+## 💣 Known Landmines
+
+- **`Player.is_playing()` vs `VoiceClient.is_playing()`**: The Player proxies the VoiceClient. While TTS is playing directly on the VoiceClient, the Player will report `is_playing() == True` even if the prayer is paused. Always check `guild_id in self._tts_playing`.
+- **Discord Status API**: You cannot set a "Voice Status" unless the bot is physically inside the channel. Do not remove the "join-set-leave" blip logic.
+- **TOCTOU in Greetings**: Greetings involve a network call to `edge-tts`. Re-check if a prayer has started *after* the `await save()` call to avoid cutting off prayers.
+- **Volume Restart**: `discord.py` requires an FFmpeg restart to change volume. `Player.set_volume` handles this by calculating the current position and restarting the source.
 
 ## Architecture Flow
 
 ```
-User Browser (local TZ)
-    │
-    ├── Admin: local time entered → JS converts to UTC → POST /prayers/save → DB (UTC)
-    ├── Public: DB (UTC) → JS converts to local → displayed in browser TZ
-    ├── Ad-hoc: POST /prayers/adhoc → dashboard_commands queue → bot polls → joins voice → plays
-    └── Login: POST /login → sets prayer_session cookie → all admin forms work
-
-Discord Bot
-    │
-    ├── on_ready / on_guild_join → discover_guild + replace_guild_channels
-    ├── PrayerScheduler (30s loop) → checks UTC time → pre-join 5min before → play at time
-    ├── Command loop (2s poll) → skip / pause / resume / volume / play_track / apply_server
-    └── Voice state → auto-pause on empty, auto-resume on join
+Dashboard (FastAPI) <─── SQLite ───> Bot (discord.py)
+    │                                  │
+    ├── /prayers: Schedule CRUD        ├── PrayerScheduler: 10m pre-join
+    ├── /servers: Channel/TTS Setup    ├── /start & /exit: Slash Commands
+    └── /history: Success/Fail Logs    └── TTS Queue: Greeting worker
 ```
-
-## Maintaining this file
-
-Keep this file for knowledge useful to almost every future agent session in this project.
-Do not repeat what the codebase already shows; point to the authoritative file or command instead.
-Prefer rewriting or pruning existing entries over appending new ones.
-When updating this file, preserve this bar for all agents and keep entries concise.
