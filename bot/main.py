@@ -358,8 +358,9 @@ class PrayerBot(discord.Client):
         if player and player.is_playing() and not (guild_id in self._tts_playing):
             return
 
-        scoped_state = GuildScopedState(self.db, guild_id)
-        source = self._source_factory(str(filepath), 0, scoped_state.stream_volume_percent)
+        # TTS always plays at 100% volume to keep greetings consistent
+        # regardless of prayer volume boost.
+        source = self._source_factory(str(filepath), 0, 100)
         
         if vc.is_playing():
             vc.stop()
