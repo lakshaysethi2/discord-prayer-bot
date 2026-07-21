@@ -68,6 +68,14 @@ class PrayerBot(discord.Client):
 
     # ------------------------------------------------------------------ lifecycle
 
+    async def setup_hook(self) -> None:
+        """Called by discord.py when the bot is starting up."""
+        self._setup_slash_commands()
+        # This is for global sync. For instant testing, you can use:
+        # await self.tree.sync(guild=discord.Object(id=YOUR_GUILD_ID))
+        await self.tree.sync()
+        log.info("Slash commands synced globally")
+
     async def on_guild_join(self, guild: discord.Guild) -> None:
         """Handle bot being invited to a new guild — discover channels."""
         log.info("Joined new guild: %s (id=%s)", guild.name, guild.id)
@@ -79,16 +87,6 @@ class PrayerBot(discord.Client):
 
         # Ensure TTS dir exists
         TTS_DIR.mkdir(parents=True, exist_ok=True)
-
-        # Register slash commands
-        if not hasattr(self, "_slash_commands_setup_done") or not self._slash_commands_setup_done:
-            try:
-                self._setup_slash_commands()
-                await self.tree.sync()
-                self._slash_commands_setup_done = True
-                log.info("Slash commands synced")
-            except Exception as exc:
-                log.exception("Failed to sync slash commands: %s", exc)
 
         # Clear stale commands from previous sessions
         self.db.execute("UPDATE dashboard_commands SET executed_at = datetime('now'), result = 'stale_restart' WHERE executed_at IS NULL")
