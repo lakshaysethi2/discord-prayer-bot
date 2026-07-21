@@ -251,6 +251,7 @@ class BotStateKey:
     LAST_MONTHLY_RESET = "last_monthly_reset"
     STREAM_VOLUME_PERCENT = "stream_volume_percent"
     ARCHIVE_ORG_ITEMS = "archive_org_items"
+    IS_CONNECTED = "is_connected"
 
 
 BOT_STATE_KEYS: frozenset[str] = frozenset(

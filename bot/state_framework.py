@@ -74,6 +74,15 @@ class BotState:
         self.set(BotStateKey.IS_PAUSED, bool(value))
 
     @property
+    def is_connected(self) -> bool:
+        v = self.get(BotStateKey.IS_CONNECTED, "False")
+        return str(v).lower() in ("1", "true", "yes", "on")
+
+    @is_connected.setter
+    def is_connected(self, value: bool) -> None:
+        self.set(BotStateKey.IS_CONNECTED, bool(value))
+
+    @property
     def now_playing_message_id(self) -> int | None:
         v = self.get(BotStateKey.NOW_PLAYING_MESSAGE_ID)
         if not v:
