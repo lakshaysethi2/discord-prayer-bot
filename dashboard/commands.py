@@ -35,6 +35,7 @@ VALID_COMMANDS = frozenset(
         "play_track",
         "set_volume",
         "apply_server",
+        "disconnect",
     }
 )
 

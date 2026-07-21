@@ -108,6 +108,8 @@
               class="rounded bg-slate-800 hover:bg-slate-700 px-2 py-1 text-xs">⏸</button>
       <button onclick="sendControl('{{ s.guild_id }}', 'resume')"
               class="rounded bg-slate-800 hover:bg-slate-700 px-2 py-1 text-xs">▶</button>
+      <button onclick="sendControl('{{ s.guild_id }}', 'disconnect')"
+              class="rounded bg-red-900/50 hover:bg-red-800/50 border border-red-800/50 px-2 py-1 text-xs" title="Leave voice channel">🚪</button>
     </div>
     {% endfor %}
   </div>

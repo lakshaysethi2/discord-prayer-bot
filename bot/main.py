@@ -447,6 +447,27 @@ class PrayerBot(discord.Client):
             await player.start(track)
             return "ok:playing"
 
+        elif command == "disconnect":
+            if not guild_id:
+                return "error:missing_guild_id"
+            # Stop player if active
+            player = self.players.pop(guild_id, None)
+            if player and player.is_playing():
+                await player.stop_hard()
+            # Cancel any pending disconnect timer
+            self._cancel_disconnect_task(guild_id)
+            # Disconnect from voice (check dict + guild.voice_client)
+            vc = self.voice_connections.pop(guild_id, None)
+            if vc is None:
+                guild = self.get_guild(int(guild_id))
+                if guild and guild.voice_client:
+                    vc = guild.voice_client
+            if vc and vc.is_connected():
+                await vc.disconnect()
+                log.info("Manually disconnected from voice in guild %s", guild_id)
+                return "ok:disconnected"
+            return "ok:not_connected"
+
         elif command == "apply_server":
             if not guild_id:
                 return "error:missing_guild_id"

@@ -406,6 +406,8 @@ async def controls(
         enqueue(db, command="pause", requested_by="admin", payload={"guild_id": guild_id})
     elif action == "resume":
         enqueue(db, command="resume", requested_by="admin", payload={"guild_id": guild_id})
+    elif action == "disconnect":
+        enqueue(db, command="disconnect", requested_by="admin", payload={"guild_id": guild_id})
     else:
         return JSONResponse({"ok": False, "error": "unknown action"}, status_code=400)
     return JSONResponse({"ok": True, "action": action})
