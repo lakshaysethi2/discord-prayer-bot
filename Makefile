@@ -51,6 +51,12 @@ down:
 restart:
 	$(MAKE) down && $(MAKE) up
 
+update: ## Pull latest code, rebuild, and restart containers
+	git pull
+	$(MAKE) build
+	$(MAKE) down
+	$(MAKE) up
+
 # =========================================================== observability
 logs:
 	$(COMPOSE) logs -f --tail=100
