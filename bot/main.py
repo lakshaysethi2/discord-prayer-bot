@@ -874,16 +874,8 @@ class PrayerBot(discord.Client):
                         status = f"Next prayer in ~{mins}m"
                 
                 # Official Voice Status Requirement: Bot MUST be in the channel
-                vc = self.voice_connections.get(guild_id)
-                if not vc or not vc.is_connected():
-                    # Temporarily join to set status (the user explicitly requested this "blip" approach)
-                    try:
-                        temp_vc = await voice_channel.connect(timeout=10.0, reconnect=False)
-                        vc = temp_vc
-                    except Exception as exc:
-                        log.debug("Temporary join for status failed in guild %s: %s", guild_id, exc)
-
-                if vc and vc.is_connected() and vc.channel.id == voice_channel.id:
+                vc_conn = self.voice_connections.get(guild_id)
+                if vc_conn and vc_conn.is_connected() and vc_conn.channel.id == voice_channel.id:
                     try:
                         if hasattr(voice_channel, "set_status"):
                             await voice_channel.set_status(status)
@@ -892,6 +884,17 @@ class PrayerBot(discord.Client):
                         log.info("Set official VC status for guild %s: %s", guild_id, status)
                     except Exception as exc:
                         log.debug("Official VC status update failed: %s", exc)
+                elif not vc_conn or not vc_conn.is_connected():
+                    # Temporarily join to set status (the user explicitly requested this "blip" approach)
+                    try:
+                        temp_vc = await voice_channel.connect(timeout=10.0, reconnect=False)
+                        if hasattr(voice_channel, "set_status"):
+                            await voice_channel.set_status(status)
+                        else:
+                            await voice_channel.edit(status=status)
+                        log.info("Set official VC status via blip for guild %s: %s", guild_id, status)
+                    except Exception as exc:
+                        log.debug("Temporary join/status blip failed in guild %s: %s", guild_id, exc)
 
             except Exception as exc:
                 log.warning("Unexpected error updating status for guild %s: %s", guild_id, exc)
