@@ -240,7 +240,7 @@ class PrayerBot(discord.Client):
             task.cancel()
             log.debug("Cancelled pending disconnect task for guild %s", guild_id)
 
-    def _make_schedule_disconnect(self, guild_id: str):
+    async def _make_schedule_disconnect(self, guild_id: str):
         """Return a callback that schedules disconnect 5 min after playback finishes."""
         async def _on_finish(player, track):
             # 1. Say "Thank you all for joining..." via TTS
@@ -256,6 +256,9 @@ class PrayerBot(discord.Client):
             self._cancel_disconnect_task(guild_id)
             task = asyncio.create_task(self._disconnect_voice_after_delay(guild_id, 300))
             self._disconnect_tasks[guild_id] = task
+            
+            # 3. Update status after prayer ends
+            asyncio.create_task(self._update_all_voice_statuses())
         return _on_finish
 
     async def _say_tts(self, guild_id: str, text: str) -> None:
@@ -401,7 +404,11 @@ class PrayerBot(discord.Client):
 
     async def _play_prayer_callback(self, guild_id: str, prayer_type: PrayerType, filename: str) -> bool:
         """Called by PrayerScheduler when a prayer should play."""
-        return await self._start_prayer_playback(guild_id, prayer_type, filename)
+        success = await self._start_prayer_playback(guild_id, prayer_type, filename)
+        if success:
+            # Trigger immediate status update to "Prayer in progress"
+            asyncio.create_task(self._update_all_voice_statuses())
+        return success
 
     # ------------------------------------------------------------------ voice state tracking
 
@@ -704,7 +711,9 @@ class PrayerBot(discord.Client):
                     else:
                         await voice_channel.edit(status=status)
                     log.info("Updated VC status for guild %s (%s): %s", guild_id, voice_channel.name, status)
-                except (discord.Forbidden, discord.HTTPException) as exc:
+                except discord.Forbidden:
+                    log.warning("Missing 'Set Voice Channel Status' permission in guild %s (%s). Please grant this permission to the bot's role.", guild_id, guild.name)
+                except Exception as exc:
                     log.warning("Could not set VC status for guild %s: %s", guild_id, exc)
                     
             except Exception as exc:
