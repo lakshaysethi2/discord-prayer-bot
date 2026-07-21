@@ -251,6 +251,47 @@ async def adhoc_play_by_id(
     return JSONResponse({"ok": True, "msg": "Queued"})
 
 
+@router.post("/prayers/bulk-action")
+async def bulk_action(
+    request: Request,
+    guild_id: str = Form(...),
+    action: str = Form(...),
+    db: Database = Depends(get_db),
+):
+    require_auth(request)
+    if action == "enable_all":
+        # Get existing schedules to preserve them, or create new ones
+        # Use placeholders for times: 00:00, 08:00, 16:00
+        default_times = [time(0, 0), time(8, 0), time(16, 0)]
+        for day in range(7):
+            day_schedules = db.fetchall(
+                "SELECT id, time_utc FROM prayer_schedules WHERE guild_id=? AND day_of_week=? ORDER BY id ASC",
+                (guild_id, day)
+            )
+            for i in range(3):
+                if i < len(day_schedules):
+                    # Update existing
+                    sid = day_schedules[i]["id"]
+                    t_str = day_schedules[i]["time_utc"]
+                    # If time is empty or a placeholder from previous runs, set to default
+                    if not t_str or t_str in ("00:01", "00:02", "00:03"):
+                        db.execute(
+                            "UPDATE prayer_schedules SET enabled=1, time_utc=? WHERE id=?",
+                            (default_times[i].isoformat(), sid)
+                        )
+                    else:
+                        db.execute("UPDATE prayer_schedules SET enabled=1 WHERE id=?", (sid,))
+                else:
+                    # Create new
+                    upsert_schedule(db, guild_id, day, PrayerType.BUDDHIST, default_times[i], enabled=True)
+    elif action == "disable_all":
+        db.execute("UPDATE prayer_schedules SET enabled=0 WHERE guild_id=?", (guild_id,))
+    
+    from dashboard.commands import enqueue
+    enqueue(db, command="apply_server", requested_by="admin", payload={"guild_id": guild_id})
+    return JSONResponse({"ok": True})
+
+
 # ------------------------------------------------------------------ public
 @router.get("/prayers/public/{guild_id}", response_class=HTMLResponse)
 async def prayers_public(
