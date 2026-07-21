@@ -81,4 +81,4 @@ make down          # Stop services
   - `cypress/e2e/login.cy.js` - Login page tests (7 tests)
   - `cypress/e2e/public-schedule.cy.js` - Public schedule view (14 tests)
   - `cypress/e2e/navigation.cy.js` - Cross-page navigation and auth protection (8 tests)
-  - `cypress/e2e/admin-schedule.cy.js` - Admin schedule save with UTC/local round-trip (8 tests)
+  - `cypress/e2e/admin-schedule.cy.js` - Admin schedule save with UTC/local round-trip (9 tests)

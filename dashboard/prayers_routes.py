@@ -169,7 +169,7 @@ async def save_prayers(
             seen[day] = set()
         if time_str in seen[day]:
             import urllib.parse
-            msg = urllib.parse.quote(f"Duplicate time {time_str} on same day — each slot must have a unique time")
+            msg = urllib.parse.quote("Duplicate times on same day — each slot must have a unique time")
             return RedirectResponse(f"/prayers/{guild_id}?flash={msg}", status_code=303)
         seen[day].add(time_str)
 
@@ -191,6 +191,7 @@ async def save_prayers(
                     except ValueError:
                         update_schedule(db, s.id, t, enabled_val)
                 else:
+                    # prayer_str is empty, prayer_type is NOT NULL — keep existing
                     update_schedule(db, s.id, t, enabled_val)
             except ValueError:
                 pass

@@ -39,4 +39,4 @@ services:
     working_dir: /e2e
     environment:
       - CYPRESS_ADMIN_TOKEN=${ADMIN_TOKEN:-dev-token-change-me}
-    entrypoint: ["cypress", "run", "--config", "baseUrl=https://prayer-bot-dnd.lak.nz"]
+    entrypoint: ["cypress"]
