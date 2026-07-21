@@ -13,6 +13,7 @@ from __future__ import annotations
 import contextlib
 import hmac
 import os
+import pytz
 from datetime import datetime, time, timedelta
 
 from fastapi import APIRouter, Request, Form, Depends, Query
@@ -194,7 +195,11 @@ async def prayers_admin(
     guild_rows = db.fetchall("SELECT guild_id, guild_name FROM guild_configs ORDER BY guild_name, guild_id")
     all_guilds = [{"guild_id": r["guild_id"], "name": r["guild_name"] or r["guild_id"]} for r in guild_rows]
     current_guild_name = cfg.guild_name if cfg else guild_id
+    current_tz = cfg.timezone_name if cfg and cfg.timezone_name else "UTC"
     
+    # Get common timezones for dropdown
+    all_timezones = pytz.common_timezones
+
     # Get current volume for this guild
     from bot.state_framework import GuildScopedState
     scoped_state = GuildScopedState(db, guild_id)
@@ -209,6 +214,8 @@ async def prayers_admin(
             "all_guilds": all_guilds,
             "schedules": existing,
             "current_volume": current_volume,
+            "current_tz": current_tz,
+            "all_timezones": all_timezones,
             "get_audio_filename": get_audio_filename,
         },
     )
@@ -218,43 +225,70 @@ async def prayers_admin(
 async def save_prayers(
     request: Request,
     guild_id: str = Form(...),
+    timezone_name: str = Form("UTC"),
     db: Database = Depends(get_db),
 ):
     require_auth(request)
     form_data = await request.form()
     schedules = get_weekly_schedule(db, guild_id)
+    cfg = get_guild_config(db, guild_id)
 
+    # 1. Update the guild's timezone first
+    if cfg:
+        apply_guild_config(
+            db, guild_id, 
+            enabled=cfg.enabled, 
+            voice_channel_id=cfg.voice_channel_id,
+            text_channel_id=cfg.text_channel_id,
+            logging_channel_id=cfg.logging_channel_id,
+            timezone_offset_hours=cfg.timezone_offset_hours,
+            timezone_name=timezone_name,
+            tts_voice=cfg.tts_voice
+        )
+
+    # 2. Convert and save schedules
+    tz = pytz.timezone(timezone_name)
+    now = datetime.now() # Current date to determine correct DST offset
+    
     # Validate: no duplicate times per day
     seen: dict[str, set[str]] = {}  # day_idx -> set of times
     for s in schedules:
-        time_str = form_data.get(f"time_{s.id}")
-        if not time_str:
+        local_time_str = form_data.get(f"time_{s.id}")
+        if not local_time_str:
             continue
+        
+        # Local to UTC conversion using server-side Python
+        try:
+            local_t = time.fromisoformat(local_time_str)
+            local_dt = tz.localize(datetime.combine(now.date(), local_t))
+            utc_dt = local_dt.astimezone(pytz.UTC)
+            utc_t_str = utc_dt.time().isoformat()
+        except Exception:
+            continue
+
         day = str(s.day_of_week)
         if day not in seen:
             seen[day] = set()
-        if time_str in seen[day]:
+        if utc_t_str in seen[day]:
             import urllib.parse
-            msg = urllib.parse.quote("Duplicate times on same day — each slot must have a unique time")
+            msg = urllib.parse.quote("Duplicate times on same day")
             return RedirectResponse(f"/prayers/{guild_id}?flash={msg}", status_code=303)
-        seen[day].add(time_str)
+        seen[day].add(utc_t_str)
 
     for s in schedules:
-        time_str = form_data.get(f"time_{s.id}")
+        local_time_str = form_data.get(f"time_{s.id}")
         prayer_str = form_data.get(f"prayer_{s.id}", "")
         enabled_val = f"enabled_{s.id}" in form_data
-        if time_str:
+        
+        if local_time_str:
             try:
-                # Accept both plain 'HH:MM' and full ISO timestamps '2024-01-01T02:00:00.000Z'
-                if 'T' in time_str:
-                    # ISO timestamp - extract UTC time portion only
-                    clean = time_str.replace('Z', '+00:00')
-                    dt = datetime.fromisoformat(clean)
-                    t = dt.time()
-                else:
-                    t = time.fromisoformat(time_str)
+                # Local to UTC conversion
+                local_t = time.fromisoformat(local_time_str)
+                local_dt = tz.localize(datetime.combine(now.date(), local_t))
+                utc_dt = local_dt.astimezone(pytz.UTC)
+                t = utc_dt.time()
+                
                 if prayer_str:
-                    # Update prayer_type too
                     try:
                         pt = PrayerType(prayer_str)
                         db.execute(
@@ -264,12 +298,9 @@ async def save_prayers(
                     except ValueError:
                         update_schedule(db, s.id, t, enabled_val)
                 else:
-                    # prayer_str is empty, prayer_type is NOT NULL — keep existing
                     update_schedule(db, s.id, t, enabled_val)
-            except ValueError:
+            except Exception:
                 pass
-        elif enabled_val and not time_str:
-            pass  # enabled but no time — skip
 
     # Enqueue live apply
     from dashboard.commands import enqueue
@@ -394,8 +425,12 @@ async def prayers_public(
     guild_rows = db.fetchall("SELECT guild_id, guild_name FROM guild_configs ORDER BY guild_name, guild_id")
     all_guilds = [{"guild_id": r["guild_id"], "name": r["guild_name"] or r["guild_id"]} for r in guild_rows]
     current_guild_name = cfg.guild_name if cfg else guild_id
+    current_tz = cfg.timezone_name if cfg and cfg.timezone_name else "UTC"
 
-    # Build rows (browser handles UTC → local conversion)
+    # Build rows (server handles UTC → local conversion based on saved timezone)
+    tz = pytz.timezone(current_tz)
+    now = datetime.now()
+    
     # Filter enabled schedules and organize by day for the template
     enabled_schedules = [s for s in schedules if s.enabled]
     days_list = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
@@ -403,14 +438,21 @@ async def prayers_public(
     for day_idx in range(7):
         day_schedules = [s for s in enabled_schedules if s.day_of_week == day_idx]
         if day_schedules:
+            formatted_schedules = []
+            for s in day_schedules:
+                # Convert UTC to local using Python/pytz
+                utc_dt = pytz.UTC.localize(datetime.combine(now.date(), s.time_utc))
+                local_dt = utc_dt.astimezone(tz)
+                formatted_schedules.append({
+                    "schedule": s,
+                    "local_time_str": local_dt.strftime("%H:%M")
+                })
             schedules_by_day.append({
                 "day_name": days_list[day_idx],
-                "schedules": [{"schedule": s} for s in day_schedules],
+                "schedules": formatted_schedules,
             })
 
     # Compute next upcoming prayer
-    import pytz
-    from datetime import datetime, timedelta
     utc_now = datetime.now(pytz.UTC)
     current_weekday = utc_now.weekday()  # 0=Mon
     current_time = utc_now.time().replace(second=0, microsecond=0)

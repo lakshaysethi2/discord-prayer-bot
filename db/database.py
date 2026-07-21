@@ -94,6 +94,7 @@ class Database:
                     cur.execute(stmt)
                 # Backfill: add timezone_offset_hours to guild_configs if missing
                 self._ensure_column(cur, "guild_configs", "timezone_offset_hours", "REAL DEFAULT 0.0")
+                self._ensure_column(cur, "guild_configs", "timezone_name", "TEXT DEFAULT 'UTC'")
                 # Backfill: add tts_voice to guild_configs if missing
                 self._ensure_column(cur, "guild_configs", "tts_voice", "TEXT DEFAULT 'en-US-GuyNeural'")
                 self._ensure_column(cur, "guild_configs", "logging_channel_id", "TEXT")

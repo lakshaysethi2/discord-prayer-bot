@@ -20,32 +20,12 @@
 </div>
 
 <div class="text-xs text-slate-500 mb-4 flex items-center gap-2">
-  <span>🕐 Perspective:</span>
-  <select id="tz-selector" onchange="updatePerspective(this.value)"
+  <span>🕐 Local Timezone:</span>
+  <select id="tz-selector" name="timezone_name" form="schedule-form" onchange="updatePerspective(this.value)"
           class="bg-slate-800 border border-slate-700 rounded px-2 py-0.5 text-xs text-slate-300 outline-none focus:border-indigo-500">
-    <option value="local">Detecting...</option>
-    <option value="UTC">UTC (Server Time)</option>
-    <optgroup label="Europe">
-      <option value="Europe/London">London</option>
-      <option value="Europe/Paris">Paris</option>
-      <option value="Europe/Berlin">Berlin</option>
-      <option value="Europe/Moscow">Moscow</option>
-    </optgroup>
-    <optgroup label="Americas">
-      <option value="America/New_York">US Eastern</option>
-      <option value="America/Chicago">US Central</option>
-      <option value="America/Denver">US Mountain</option>
-      <option value="America/Los_Angeles">US Pacific</option>
-      <option value="America/Anchorage">Alaska</option>
-      <option value="Pacific/Honolulu">Hawaii</option>
-    </optgroup>
-    <optgroup label="Asia/Oceania">
-      <option value="Asia/Dubai">Dubai</option>
-      <option value="Asia/Kolkata">India</option>
-      <option value="Asia/Singapore">Singapore</option>
-      <option value="Asia/Tokyo">Tokyo</option>
-      <option value="Australia/Sydney">Sydney</option>
-    </optgroup>
+    {% for tz in all_timezones %}
+    <option value="{{ tz }}" {% if tz == current_tz %}selected{% endif %}>{{ tz }}</option>
+    {% endfor %}
   </select>
   <span id="tz-info" class="text-slate-600"></span>
 </div>
@@ -131,70 +111,42 @@
 </form>
 
 <script>
-let currentTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+// Browser timezone for initial default if not set
+const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+const savedTz = "{{ current_tz }}";
+let currentTz = savedTz === 'UTC' ? browserTz : savedTz;
 
-// Populate "Detecting..." with actual name
-const localOpt = document.querySelector('#tz-selector option[value="local"]');
-localOpt.textContent = 'Local: ' + currentTz;
-localOpt.value = currentTz;
-document.getElementById('tz-selector').value = currentTz;
-
-function getTzOffsetHours(tzName) {
-  // Use a fixed date to calculate offset to avoid DST confusion during conversion
-  const d = new Date('2024-01-01T12:00:00Z');
-  const locStr = d.toLocaleString('en-US', { timeZone: tzName, hour12: false });
-  // Format: "1/1/2024, 13:00:00" or similar
-  const match = locStr.match(/(\d+):(\d+):(\d+)/);
-  if (!match) return 0;
-  const h = parseInt(match[1]);
-  const m = parseInt(match[2]);
-  // Offset = Local Hour - UTC Hour (12)
-  let off = h - 12;
-  // Handle day wrap if necessary (though 12:00 UTC is safe for most)
-  if (off > 12) off -= 24;
-  if (off < -12) off += 24;
-  return off + (m / 60);
+// If we are defaulting to browser, update the selector
+if (savedTz === 'UTC') {
+  const selector = document.getElementById('tz-selector');
+  if (selector) {
+    selector.value = currentTz;
+  }
 }
 
 function updatePerspective(newTz) {
   currentTz = newTz;
-  const off = getTzOffsetHours(currentTz);
-  document.getElementById('tz-info').textContent = '(UTC' + (off>=0?'+':'') + off.toFixed(1) + 'h)';
   
-  // Re-render all inputs from their UTC source
+  // Re-render all inputs from their UTC source using client-side display only
+  // The official "save" now happens server-side for DST accuracy
   document.querySelectorAll('.time-inp').forEach(inp => {
     if (!inp.dataset.utc) return;
     const [h,m] = inp.dataset.utc.split(':').map(Number);
+    const d = new Date();
+    d.setUTCHours(h, m, 0, 0);
     
-    // Manual offset arithmetic for consistency across perspective changes
-    let totalMinutes = (h * 60 + m) + Math.round(off * 60);
-    totalMinutes = ((totalMinutes % 1440) + 1440) % 1440;
-    
-    const localH = Math.floor(totalMinutes / 60);
-    const localM = totalMinutes % 60;
-    inp.value = String(localH).padStart(2, '0') + ':' + String(localM).padStart(2, '0');
+    // Display using browser/selected timezone
+    const localStr = d.toLocaleTimeString('en-US', { timeZone: currentTz, hour12: false, hour: '2-digit', minute: '2-digit' });
+    inp.value = localStr;
   });
 }
 
 // Init
 updatePerspective(currentTz);
 
-// Submit: perspective-local → UTC
+// Submit: simply send the local values, server handles UTC conversion based on timezone_name
 document.getElementById('schedule-form').addEventListener('submit', function(e) {
-  e.preventDefault();
-  const off = getTzOffsetHours(currentTz);
-  document.querySelectorAll('.time-inp').forEach(inp => {
-    if (!inp.value) return;
-    const [h,m] = inp.value.split(':').map(Number);
-    
-    // Convert back to UTC: UTC = Local - Offset
-    let totalMinutes = (h * 60 + m) - Math.round(off * 60);
-    totalMinutes = ((totalMinutes % 1440) + 1440) % 1440;
-    
-    const utcH = Math.floor(totalMinutes / 60);
-    const utcM = totalMinutes % 60;
-    inp.value = String(utcH).padStart(2,'0') + ':' + String(utcM).padStart(2,'0');
-  });
+  // No client-side conversion needed anymore
   this.submit();
 });
 

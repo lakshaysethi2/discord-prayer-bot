@@ -36,35 +36,9 @@
 
 <div class="mb-6 flex flex-wrap items-center gap-3">
   <div class="inline-block rounded-full bg-slate-800 px-4 py-1.5 text-xs text-slate-400" id="tz-badge-container">
-    <span>🕐 Perspective:</span>
-    <select id="tz-selector" onchange="updatePerspective(this.value)"
-            class="bg-transparent border-none text-slate-200 outline-none cursor-pointer">
-      <option value="local">Detecting...</option>
-      <option value="UTC">UTC (Server Time)</option>
-      <optgroup label="Europe">
-        <option value="Europe/London">London</option>
-        <option value="Europe/Paris">Paris</option>
-        <option value="Europe/Berlin">Berlin</option>
-        <option value="Europe/Moscow">Moscow</option>
-      </optgroup>
-      <optgroup label="Americas">
-        <option value="America/New_York">US Eastern</option>
-        <option value="America/Chicago">US Central</option>
-        <option value="America/Denver">US Mountain</option>
-        <option value="America/Los_Angeles">US Pacific</option>
-        <option value="America/Anchorage">Alaska</option>
-        <option value="Pacific/Honolulu">Hawaii</option>
-      </optgroup>
-      <optgroup label="Asia/Oceania">
-        <option value="Asia/Dubai">Dubai</option>
-        <option value="Asia/Kolkata">India</option>
-        <option value="Asia/Singapore">Singapore</option>
-        <option value="Asia/Tokyo">Tokyo</option>
-        <option value="Australia/Sydney">Sydney</option>
-      </optgroup>
-    </select>
+    <span>🕐 Local Timezone:</span>
+    <span class="text-slate-200 ml-1">{{ current_tz }}</span>
   </div>
-  <span id="tz-info" class="text-[10px] text-slate-600"></span>
 </div>
 
 {% set emojis = {"buddhist": "☸️", "christian": "✝️", "jewish": "✡️", "sufi": "☪️", "vedantic": "🕉️", "three_daily": "🌅"} %}
@@ -79,7 +53,7 @@
     <div class="flex-1 min-w-0">
       <div class="font-medium text-sm">{{ row.schedule.prayer_type.value | title }}</div>
       <div class="text-xs text-slate-400">
-        <span class="local-time">--:--</span>
+        <span class="local-time">{{ row.local_time_str }}</span>
         <span class="text-slate-600 ml-1">UTC {{ row.schedule.time_utc }}</span>
       </div>
     </div>
@@ -97,58 +71,18 @@
 {% endif %}
 
 <script>
-let currentTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-
-// Populate "Detecting..." with actual name
-const localOpt = document.querySelector('#tz-selector option[value="local"]');
-if (localOpt) {
-  localOpt.textContent = 'Local: ' + currentTz;
-  localOpt.value = currentTz;
-}
-document.getElementById('tz-selector').value = currentTz;
-
-function getTzOffsetHours(tzName) {
-  const d = new Date('2024-01-01T12:00:00Z');
-  const locStr = d.toLocaleString('en-US', { timeZone: tzName, hour12: false });
-  const match = locStr.match(/(\d+):(\d+):(\d+)/);
-  if (!match) return 0;
-  const h = parseInt(match[1]);
-  const m = parseInt(match[2]);
-  let off = h - 12;
-  if (off > 12) off -= 24;
-  if (off < -12) off += 24;
-  return off + (m / 60);
-}
-
-function updatePerspective(newTz) {
-  currentTz = newTz;
-  const off = getTzOffsetHours(currentTz);
-  const sign = off >= 0 ? '+' : '';
-  document.getElementById('tz-info').textContent = '(UTC' + sign + off.toFixed(1) + 'h)';
-
-  // 1. Update upcoming prayer card
-  const nextEl = document.querySelector('.local-time-next');
-  if (nextEl) {
+const nextEl = document.querySelector('.local-time-next');
+if (nextEl) {
     const d = new Date(nextEl.dataset.iso);
-    const localTime = d.toLocaleTimeString('en-US', {timeZone: currentTz, hour: '2-digit', minute: '2-digit'});
-    const localDay = d.toLocaleDateString('en-US', {timeZone: currentTz, weekday: 'long'});
-    const localDate = d.toLocaleDateString('en-US', {timeZone: currentTz, day: 'numeric', month: 'short'});
-    nextEl.innerHTML = localTime + ' · ' + localDay + ' ' + localDate + ' <span class="text-slate-500">' + currentTz + '</span>';
-  }
-
-  // 2. Update schedule cards
-  document.querySelectorAll('[data-utc-time]').forEach(card => {
-    const [h, m] = card.dataset.utcTime.split(':').map(Number);
-    let totalMinutes = (h * 60 + m) + Math.round(off * 60);
-    totalMinutes = ((totalMinutes % 1440) + 1440) % 1440;
+    const tzName = "{{ current_tz }}";
     
-    const localH = Math.floor(totalMinutes / 60);
-    const localM = totalMinutes % 60;
-    card.querySelector('.local-time').textContent = String(localH).padStart(2, '0') + ':' + String(localM).padStart(2, '0');
-  });
+    // Display using the saved timezone
+    const options = { timeZone: tzName, hour: '2-digit', minute: '2-digit' };
+    const localTime = d.toLocaleTimeString('en-US', options);
+    const localDay = d.toLocaleDateString('en-US', { timeZone: tzName, weekday: 'long' });
+    const localDate = d.toLocaleDateString('en-US', { timeZone: tzName, day: 'numeric', month: 'short' });
+    
+    nextEl.innerHTML = localTime + ' · ' + localDay + ' ' + localDate + ' <span class="text-slate-500">' + tzName + '</span>';
 }
-
-// Init
-updatePerspective(currentTz);
 </script>
 {% endblock %}
