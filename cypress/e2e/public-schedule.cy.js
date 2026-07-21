@@ -1,6 +1,6 @@
 /// <reference types="cypress" />
 
-const GUILD_ID = '1194598173742731284';
+const GUILD_ID = Cypress.env('GUILD_ID');
 const PUBLIC_URL = `/prayers/public/${GUILD_ID}`;
 
 describe('Public Prayer Schedule Page', () => {

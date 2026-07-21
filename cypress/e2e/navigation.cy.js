@@ -1,6 +1,6 @@
 /// <reference types="cypress" />
 
-const GUILD_ID = '1194598173742731284';
+const GUILD_ID = Cypress.env('GUILD_ID');
 
 describe('Site Navigation', () => {
   it('should navigate from landing to public schedule via direct URL', () => {
