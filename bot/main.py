@@ -70,11 +70,14 @@ class PrayerBot(discord.Client):
 
     async def setup_hook(self) -> None:
         """Called by discord.py when the bot is starting up."""
-        self._setup_slash_commands()
-        # This is for global sync. For instant testing, you can use:
-        # await self.tree.sync(guild=discord.Object(id=YOUR_GUILD_ID))
-        await self.tree.sync()
-        log.info("Slash commands synced globally")
+        try:
+            self._setup_slash_commands()
+            # This is for global sync. For instant testing, you can use:
+            # await self.tree.sync(guild=discord.Object(id=YOUR_GUILD_ID))
+            await self.tree.sync()
+            log.info("Slash commands synced globally")
+        except Exception as exc:
+            log.exception("Failed to sync slash commands in setup_hook: %s", exc)
 
     async def on_guild_join(self, guild: discord.Guild) -> None:
         """Handle bot being invited to a new guild — discover channels."""
@@ -261,8 +264,6 @@ class PrayerBot(discord.Client):
         if player and player.is_playing() and not (guild_id in self._tts_playing):
             return
 
-        hash_text = hashlib.sha1(text.encode()).hexdigest()
-        
         # Get per-guild TTS voice config
         cfg = get_guild_config(self.db, guild_id)
         voice = cfg.tts_voice if cfg and cfg.tts_voice else "en-US-GuyNeural"

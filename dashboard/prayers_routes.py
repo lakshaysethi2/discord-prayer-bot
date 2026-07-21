@@ -264,26 +264,48 @@ async def bulk_action(
         # Use placeholders for times: 00:00, 08:00, 16:00
         default_times = [time(0, 0), time(8, 0), time(16, 0)]
         for day in range(7):
+            # Fetch current schedules for this day to avoid collisions
             day_schedules = db.fetchall(
-                "SELECT id, time_utc FROM prayer_schedules WHERE guild_id=? AND day_of_week=? ORDER BY id ASC",
+                "SELECT id, time_utc, prayer_type FROM prayer_schedules WHERE guild_id=? AND day_of_week=? ORDER BY id ASC",
                 (guild_id, day)
             )
-            for i in range(3):
-                if i < len(day_schedules):
-                    # Update existing
-                    sid = day_schedules[i]["id"]
-                    t_str = day_schedules[i]["time_utc"]
-                    # If time is empty or a placeholder from previous runs, set to default
-                    if not t_str or t_str in ("00:01", "00:02", "00:03"):
-                        db.execute(
-                            "UPDATE prayer_schedules SET enabled=1, time_utc=? WHERE id=?",
-                            (default_times[i].isoformat(), sid)
-                        )
+            existing_times = {s["time_utc"][:5] for s in day_schedules} # Set of "HH:MM"
+            
+            # 1. Update/Enable existing rows
+            for s in day_schedules:
+                sid = s["id"]
+                t_str = s["time_utc"]
+                # If it's a placeholder (00:01-00:03), try to set it to a default time
+                # but only if that default time isn't already taken by another row
+                if t_str[:5] in ("00:01", "00:02", "00:03"):
+                    for dt in default_times:
+                        dt_str = dt.strftime("%H:%M")
+                        if dt_str not in existing_times:
+                            db.execute("UPDATE prayer_schedules SET enabled=1, time_utc=? WHERE id=?", 
+                                       (dt.isoformat(), sid))
+                            existing_times.remove(t_str[:5])
+                            existing_times.add(dt_str)
+                            break
                     else:
+                        # No default time available, just enable the placeholder
                         db.execute("UPDATE prayer_schedules SET enabled=1 WHERE id=?", (sid,))
                 else:
-                    # Create new
-                    upsert_schedule(db, guild_id, day, PrayerType.BUDDHIST, default_times[i], enabled=True)
+                    # Not a placeholder, just enable it
+                    db.execute("UPDATE prayer_schedules SET enabled=1 WHERE id=?", (sid,))
+
+            # 2. Add new default rows if we have fewer than 3 total enabled slots
+            current_count = len(day_schedules)
+            if current_count < 3:
+                for dt in default_times:
+                    if len(day_schedules) >= 3:
+                        break
+                    dt_str = dt.strftime("%H:%M")
+                    if dt_str not in existing_times:
+                        upsert_schedule(db, guild_id, day, PrayerType.BUDDHIST, dt, enabled=True)
+                        existing_times.add(dt_str)
+                        # We re-fetch or just increment to track count
+                        day_schedules.append({"dummy": True}) 
+
     elif action == "disable_all":
         db.execute("UPDATE prayer_schedules SET enabled=0 WHERE guild_id=?", (guild_id,))
     
@@ -425,6 +447,10 @@ async def servers_update(
     db: Database = Depends(get_db),
 ):
     require_auth(request)
+    VALID_TTS_VOICES = {"en-US-GuyNeural", "en-US-AriaNeural", "en-GB-SoniaNeural"}
+    if tts_voice not in VALID_TTS_VOICES:
+        tts_voice = "en-US-GuyNeural"
+
     cfg = get_guild_config(db, guild_id)
     wants_enabled = enabled == "on"
     apply_guild_config(
@@ -433,6 +459,7 @@ async def servers_update(
         enabled=wants_enabled,
         voice_channel_id=voice_channel_id or None,
         text_channel_id=text_channel_id or None,
+        timezone_offset_hours=cfg.timezone_offset_hours if cfg else 0.0,
         tts_voice=tts_voice,
     )
     # Enqueue live apply (no restart) — task 3 / 4
