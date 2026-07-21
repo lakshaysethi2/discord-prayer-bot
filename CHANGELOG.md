@@ -16,10 +16,13 @@ All notable changes to the Discord Prayer Bot.
 - **Configurable Voices**: Per-server selection between Male (Guy), Female (Aria), and British (Sonia) TTS voices.
 - **Health Check**: Added `/health` API endpoint for monitoring database and bot connectivity.
 - **make update**: Simplified deployment command for Git pull, rebuild, and container restart.
+- **Detailed Behavior Spec**: Created `BOT_BEHAVIOR.md` describing every aspect of the bot's lifecycle.
 
 ### Changed
+- **Improved Adhoc Flow**: Manual starts now use a respectful sequence (5s pause -> Announcement -> 5s pause -> Recitation).
+- **Restart Resilience**: Bot now checks a range (next 10m) on startup to ensure it joins even if it starts late.
+- **Volume Consistency**: Prayer volume boost no longer applies to TTS greetings (fixed at 100%).
 - **Guild-Scoped State**: Refactored `BotState` to be strictly scoped per-guild, ensuring complete isolation of playback position and volume between servers.
-- **Improved Volume Reliability**: Bot now restarts the FFmpeg source immediately when volume is changed, providing instant feedback.
 - **Notification Cleanup**: Bot now deletes its previous "Now Playing" message when a prayer ends to prevent text channel spam.
 - **Status Blips**: Bot temporarily joins voice every 30m to update the "Voice Channel Status" text without needing to stay connected.
 - **Voice-Text Notifications**: Voice channels can now be selected in the dashboard as text notification targets.
