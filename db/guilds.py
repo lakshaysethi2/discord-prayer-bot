@@ -130,7 +130,11 @@ def seed_env_guild(db: Database, config: object) -> None:
         tcid = get_associated_text_channel(db, gid, vcid)
     known = {ch.channel_id: ch.channel_type for ch in get_guild_channels(db, gid)}
     if vcid in known and (tcid is None or tcid in known):
-        apply_guild_config(db, gid, enabled=True, voice_channel_id=vcid, text_channel_id=tcid)
+        apply_guild_config(
+            db, gid, enabled=True, voice_channel_id=vcid, text_channel_id=tcid,
+            timezone_offset_hours=existing.timezone_offset_hours if existing else 0.0,
+            tts_voice=existing.tts_voice if existing else "en-US-GuyNeural"
+        )
 
 
 # --------------------------------------------------------------------- reads
