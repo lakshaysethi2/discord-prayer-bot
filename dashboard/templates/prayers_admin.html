@@ -19,7 +19,36 @@
           class="text-xs rounded bg-red-900/50 hover:bg-red-800/50 border border-red-800/50 px-2 py-1 text-red-300" title="Make bot leave voice channel">🚪 Leave Voice</button>
 </div>
 
-<div class="text-xs text-slate-500 mb-4">🕐 <span id="tz-info">detecting...</span> — all times in your local timezone</div>
+<div class="text-xs text-slate-500 mb-4 flex items-center gap-2">
+  <span>🕐 Perspective:</span>
+  <select id="tz-selector" onchange="updatePerspective(this.value)"
+          class="bg-slate-800 border border-slate-700 rounded px-2 py-0.5 text-xs text-slate-300 outline-none focus:border-indigo-500">
+    <option value="local">Detecting...</option>
+    <option value="UTC">UTC (Server Time)</option>
+    <optgroup label="Europe">
+      <option value="Europe/London">London</option>
+      <option value="Europe/Paris">Paris</option>
+      <option value="Europe/Berlin">Berlin</option>
+      <option value="Europe/Moscow">Moscow</option>
+    </optgroup>
+    <optgroup label="Americas">
+      <option value="America/New_York">US Eastern</option>
+      <option value="America/Chicago">US Central</option>
+      <option value="America/Denver">US Mountain</option>
+      <option value="America/Los_Angeles">US Pacific</option>
+      <option value="America/Anchorage">Alaska</option>
+      <option value="Pacific/Honolulu">Hawaii</option>
+    </optgroup>
+    <optgroup label="Asia/Oceania">
+      <option value="Asia/Dubai">Dubai</option>
+      <option value="Asia/Kolkata">India</option>
+      <option value="Asia/Singapore">Singapore</option>
+      <option value="Asia/Tokyo">Tokyo</option>
+      <option value="Australia/Sydney">Sydney</option>
+    </optgroup>
+  </select>
+  <span id="tz-info" class="text-slate-600"></span>
+</div>
 {% set flash_msg = request.query_params.get('flash', '') %}
 {% if flash_msg %}
 <div id="flash-msg" class="mb-4 rounded bg-emerald-900/40 border border-emerald-700 px-3 py-2 text-sm text-emerald-200">{{ flash_msg }}</div>
@@ -102,26 +131,69 @@
 </form>
 
 <script>
-const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-const off = -(new Date().getTimezoneOffset()) / 60;
-document.getElementById('tz-info').textContent = tz + ' (UTC' + (off>=0?'+':'') + off.toFixed(1) + 'h)';
+let currentTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
-// Init: UTC → local
-document.querySelectorAll('.time-inp').forEach(inp => {
-  if (!inp.dataset.utc) return;
-  const [h,m] = inp.dataset.utc.split(':').map(Number);
-  const d = new Date(); d.setUTCHours(h, m, 0, 0);
-  inp.value = String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
-});
+// Populate "Detecting..." with actual name
+const localOpt = document.querySelector('#tz-selector option[value="local"]');
+localOpt.textContent = 'Local: ' + currentTz;
+localOpt.value = currentTz;
+document.getElementById('tz-selector').value = currentTz;
 
-// Submit: local → UTC (same reference date as init, so conversions are exact inverses)
+function getTzOffsetHours(tzName) {
+  // Use a fixed date to calculate offset to avoid DST confusion during conversion
+  const d = new Date('2024-01-01T12:00:00Z');
+  const locStr = d.toLocaleString('en-US', { timeZone: tzName, hour12: false });
+  // Format: "1/1/2024, 13:00:00" or similar
+  const match = locStr.match(/(\d+):(\d+):(\d+)/);
+  if (!match) return 0;
+  const h = parseInt(match[1]);
+  const m = parseInt(match[2]);
+  // Offset = Local Hour - UTC Hour (12)
+  let off = h - 12;
+  // Handle day wrap if necessary (though 12:00 UTC is safe for most)
+  if (off > 12) off -= 24;
+  if (off < -12) off += 24;
+  return off + (m / 60);
+}
+
+function updatePerspective(newTz) {
+  currentTz = newTz;
+  const off = getTzOffsetHours(currentTz);
+  document.getElementById('tz-info').textContent = '(UTC' + (off>=0?'+':'') + off.toFixed(1) + 'h)';
+  
+  // Re-render all inputs from their UTC source
+  document.querySelectorAll('.time-inp').forEach(inp => {
+    if (!inp.dataset.utc) return;
+    const [h,m] = inp.dataset.utc.split(':').map(Number);
+    
+    // Manual offset arithmetic for consistency across perspective changes
+    let totalMinutes = (h * 60 + m) + Math.round(off * 60);
+    totalMinutes = ((totalMinutes % 1440) + 1440) % 1440;
+    
+    const localH = Math.floor(totalMinutes / 60);
+    const localM = totalMinutes % 60;
+    inp.value = String(localH).padStart(2, '0') + ':' + String(localM).padStart(2, '0');
+  });
+}
+
+// Init
+updatePerspective(currentTz);
+
+// Submit: perspective-local → UTC
 document.getElementById('schedule-form').addEventListener('submit', function(e) {
   e.preventDefault();
+  const off = getTzOffsetHours(currentTz);
   document.querySelectorAll('.time-inp').forEach(inp => {
     if (!inp.value) return;
     const [h,m] = inp.value.split(':').map(Number);
-    const d = new Date(); d.setHours(h, m, 0, 0);
-    inp.value = String(d.getUTCHours()).padStart(2,'0') + ':' + String(d.getUTCMinutes()).padStart(2,'0');
+    
+    // Convert back to UTC: UTC = Local - Offset
+    let totalMinutes = (h * 60 + m) - Math.round(off * 60);
+    totalMinutes = ((totalMinutes % 1440) + 1440) % 1440;
+    
+    const utcH = Math.floor(totalMinutes / 60);
+    const utcM = totalMinutes % 60;
+    inp.value = String(utcH).padStart(2,'0') + ':' + String(utcM).padStart(2,'0');
   });
   this.submit();
 });
