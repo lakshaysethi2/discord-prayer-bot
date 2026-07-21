@@ -217,6 +217,7 @@ class PrayerBot(discord.Client):
         if existing is None and guild.voice_client and guild.voice_client.is_connected():
             existing = guild.voice_client
             self.voice_connections[guild_id] = existing
+            
         if existing and existing.is_connected():
             if existing.channel and str(existing.channel.id) == str(cfg.voice_channel_id):
                 return existing
@@ -224,6 +225,7 @@ class PrayerBot(discord.Client):
             return existing
 
         try:
+            vc = None
             for attempt in range(1, 4):
                 try:
                     vc = await voice_channel.connect(reconnect=True, timeout=30.0)
@@ -234,8 +236,21 @@ class PrayerBot(discord.Client):
                         raise
             else:
                 return None
+                
             self.voice_connections[guild_id] = vc
             log.info("Joined voice in guild %s for prayer", guild_id)
+            
+            # Greet people already in the room
+            listeners = [m.display_name for m in voice_channel.members if not m.bot]
+            if listeners:
+                if len(listeners) == 1:
+                    names = listeners[0]
+                elif len(listeners) == 2:
+                    names = f"{listeners[0]} and {listeners[1]}"
+                else:
+                    names = "everyone"
+                asyncio.create_task(self._say_tts(guild_id, f"Welcome {names}, thank you for joining."))
+                
             return vc
         except Exception as exc:
             log.exception("Failed to join voice in guild %s: %s", guild_id, exc)
@@ -436,7 +451,7 @@ class PrayerBot(discord.Client):
         
         player.state.now_playing_message_id = None
 
-    async def _start_prayer_playback(self, guild_id: str, prayer_type: PrayerType, filename: str) -> bool:
+    async def _start_prayer_playback(self, guild_id: str, prayer_type: PrayerType, filename: str, is_adhoc: bool = False) -> bool:
         """Shared logic for starting a prayer (scheduled, adhoc, or slash)."""
         media_path = MEDIA_DIR / filename
         if not media_path.exists():
@@ -448,6 +463,20 @@ class PrayerBot(discord.Client):
         if vc is None:
             log.error("Cannot play prayer — failed to join voice in guild %s", guild_id)
             return False
+
+        # Adhoc specific flow: 5s pause, announcement, 5s pause
+        if is_adhoc:
+            await asyncio.sleep(5)
+            # Create a temporary event to wait for this specific announcement to finish
+            announce_done = asyncio.Event()
+            
+            async def _announce_and_set():
+                await self._process_tts(guild_id, f"Reciting {prayer_type.value.title()} prayers.")
+                announce_done.set()
+                
+            asyncio.create_task(_announce_and_set())
+            await announce_done.wait()
+            await asyncio.sleep(5)
 
         # Create or reuse player with current voice client
         player = self.players.get(guild_id)
@@ -688,7 +717,7 @@ class PrayerBot(discord.Client):
                 # Fallback if it's an adhoc track not in enum
                 prayer_type = PrayerType.THREE_DAILY 
 
-            success = await self._start_prayer_playback(guild_id, prayer_type, track_id)
+            success = await self._start_prayer_playback(guild_id, prayer_type, track_id, is_adhoc=True)
             return "ok:playing" if success else "error:playback_failed"
 
         elif command == "disconnect":
@@ -937,7 +966,7 @@ class PrayerBot(discord.Client):
             
             await interaction.response.defer(ephemeral=True)
             
-            success = await self._play_prayer_callback(guild_id, pt, filename)
+            success = await self._start_prayer_playback(guild_id, pt, filename, is_adhoc=True)
             if success:
                 await interaction.followup.send(f"🕌 Playing **{pt.value.title()}** prayer.")
             else:
