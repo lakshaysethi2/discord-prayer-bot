@@ -74,15 +74,14 @@ class PrayerBot(discord.Client):
         self._running = True
 
         # Register slash commands
-        try:
-            # Add commands to tree
-            self._setup_slash_commands()
-            # Sync commands globally (can take up to an hour, but usually faster)
-            # For development, you might want to sync to a specific guild.
-            await self.tree.sync()
-            log.info("Slash commands synced")
-        except Exception as exc:
-            log.exception("Failed to sync slash commands: %s", exc)
+        if not hasattr(self, "_slash_commands_setup_done"):
+            try:
+                self._setup_slash_commands()
+                self._slash_commands_setup_done = True
+                await self.tree.sync()
+                log.info("Slash commands synced")
+            except Exception as exc:
+                log.exception("Failed to sync slash commands: %s", exc)
 
         # Clear stale commands from previous sessions
         self.db.execute("UPDATE dashboard_commands SET executed_at = datetime('now'), result = 'stale_restart' WHERE executed_at IS NULL")
@@ -548,6 +547,8 @@ class PrayerBot(discord.Client):
             discord.app_commands.Choice(name="Vedantic", value="vedantic"),
             discord.app_commands.Choice(name="Three Daily", value="three_daily"),
         ])
+        @discord.app_commands.default_permissions(manage_guild=True)
+        @discord.app_commands.guild_only()
         async def start_prayer(interaction: discord.Interaction, prayer_type: str):
             guild_id = str(interaction.guild_id)
             pt = PrayerType(prayer_type)
@@ -562,16 +563,22 @@ class PrayerBot(discord.Client):
                 await interaction.followup.send("❌ Failed to start prayer. Please check if I have voice permissions.")
 
         @self.tree.command(name="exit", description="Stop the current prayer and leave the voice channel")
+        @discord.app_commands.default_permissions(manage_guild=True)
+        @discord.app_commands.guild_only()
         async def exit_prayer(interaction: discord.Interaction):
             guild_id = str(interaction.guild_id)
+            
+            await interaction.response.defer(ephemeral=True)
             
             # Use the existing disconnect command logic
             result = await self._handle_command("disconnect", {"guild_id": guild_id})
             
-            if "ok" in result:
-                await interaction.response.send_message("👋 Disconnected and stopped any active prayer.", ephemeral=True)
+            if result == "ok:disconnected":
+                await interaction.followup.send("👋 Disconnected and stopped any active prayer.")
+            elif result == "ok:not_connected":
+                await interaction.followup.send("⚠️ Not currently connected to a voice channel.")
             else:
-                await interaction.response.send_message("❌ Not currently connected to a voice channel.", ephemeral=True)
+                await interaction.followup.send(f"❌ Failed to disconnect: {result}")
 
 
 # ---------------------------------------------------------------------------
