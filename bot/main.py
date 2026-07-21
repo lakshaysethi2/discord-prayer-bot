@@ -650,6 +650,9 @@ class PrayerBot(discord.Client):
     async def _update_all_voice_statuses(self) -> None:
         """Iterate over all enabled guilds and update their voice channel status."""
         log.info("Updating voice statuses for %d guilds", len(self.guilds))
+        
+        all_next_prayer_minutes = []
+
         for guild in self.guilds:
             guild_id = str(guild.id)
             try:
@@ -676,6 +679,9 @@ class PrayerBot(discord.Client):
                     status = "Prayer in progress"
                 else:
                     minutes_left = self._get_next_prayer_minutes(guild_id)
+                    if minutes_left is not None:
+                        all_next_prayer_minutes.append(minutes_left)
+                        
                     if minutes_left is None:
                         status = "No prayers scheduled"
                     elif minutes_left <= 0:
@@ -692,16 +698,28 @@ class PrayerBot(discord.Client):
                             status = f"Next prayer in ~{mins}m"
                 
                 # Use set_status if available (2.4.0+), else fallback to edit
-                if hasattr(voice_channel, "set_status"):
-                    await voice_channel.set_status(status, reason="Periodic prayer update")
-                else:
-                    await voice_channel.edit(status=status)
+                try:
+                    if hasattr(voice_channel, "set_status"):
+                        await voice_channel.set_status(status, reason="Periodic prayer update")
+                    else:
+                        await voice_channel.edit(status=status)
+                    log.info("Updated VC status for guild %s (%s): %s", guild_id, voice_channel.name, status)
+                except (discord.Forbidden, discord.HTTPException) as exc:
+                    log.warning("Could not set VC status for guild %s: %s", guild_id, exc)
                     
-                log.info("Updated status for guild %s (%s): %s", guild_id, voice_channel.name, status)
-            except discord.Forbidden:
-                log.warning("Missing permissions to set voice status in guild %s", guild_id)
             except Exception as exc:
-                log.warning("Failed to set voice status in guild %s: %s", guild_id, exc)
+                log.warning("Unexpected error updating status for guild %s: %s", guild_id, exc)
+
+        # Also update the bot's own activity status as a global indicator
+        if all_next_prayer_minutes:
+            earliest_mins = min(all_next_prayer_minutes)
+            h, m = divmod(earliest_mins, 60)
+            if h > 0:
+                activity_text = f"Next prayer in ~{h}h {m}m"
+            else:
+                activity_text = f"Next prayer in ~{m}m"
+            await self.change_presence(activity=discord.Game(name=activity_text))
+            log.info("Updated bot activity: %s", activity_text)
 
     # ------------------------------------------------------------------ slash commands
 
