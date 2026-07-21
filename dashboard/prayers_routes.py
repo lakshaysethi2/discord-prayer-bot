@@ -425,19 +425,11 @@ async def servers_page(
         })
     # Current volume from bot_state (read from first guild if possible, else global)
     # TODO: Make the volume slider per-server in the UI to support multi-guild settings properly
-    current_volume = 100
-    if servers:
-        first_gid = servers[0]["guild_id"]
-        current_volume = db.get_state_int(f"stream_volume_percent:{first_gid}", 
-                                         db.get_state_int("stream_volume_percent", 100))
-    else:
-        current_volume = db.get_state_int("stream_volume_percent", 100)
     return templates.TemplateResponse(
         request,
         "servers.html",
         {
             "servers": servers,
-            "current_volume": current_volume,
         },
     )
 

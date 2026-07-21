@@ -533,7 +533,7 @@ class PrayerBot(discord.Client):
 
         elif command == "set_volume":
             vol = int(payload.get("volume_percent", 100))
-            if player:
+            if player and guild_id not in self._tts_playing:
                 vol = await player.set_volume(vol)
                 return f"ok:volume:{vol}"
             
