@@ -60,6 +60,7 @@ class PrayerBot(discord.Client):
         self.per_guild_announcers: dict = {}
         self._command_task: asyncio.Task | None = None
         self._running = False
+        self.tree = discord.app_commands.CommandTree(self)
 
     # ------------------------------------------------------------------ lifecycle
 
@@ -71,6 +72,17 @@ class PrayerBot(discord.Client):
     async def on_ready(self) -> None:
         log.info("Prayer Bot logged in as %s (id=%s)", self.user, self.user.id)
         self._running = True
+
+        # Register slash commands
+        try:
+            # Add commands to tree
+            self._setup_slash_commands()
+            # Sync commands globally (can take up to an hour, but usually faster)
+            # For development, you might want to sync to a specific guild.
+            await self.tree.sync()
+            log.info("Slash commands synced")
+        except Exception as exc:
+            log.exception("Failed to sync slash commands: %s", exc)
 
         # Clear stale commands from previous sessions
         self.db.execute("UPDATE dashboard_commands SET executed_at = datetime('now'), result = 'stale_restart' WHERE executed_at IS NULL")
@@ -135,7 +147,7 @@ class PrayerBot(discord.Client):
             "text_channel_id": cfg.text_channel_id,
         }
 
-        # Create prayer scheduler (starts immediately, checks every 60s)
+        # Create prayer scheduler (starts immediately, checks every 30s)
         scheduler = PrayerScheduler(
             db=self.db,
             play_prayer=self._play_prayer_callback,
@@ -200,11 +212,12 @@ class PrayerBot(discord.Client):
     async def _disconnect_voice_after_delay(self, guild_id: str, delay_seconds: int = 300) -> None:
         """Disconnect from voice after a delay (default 5 min after prayer ends)."""
         await asyncio.sleep(delay_seconds)
-        vc = self.voice_connections.pop(guild_id, None)
+        vc = self.voice_connections.get(guild_id)
         if vc and vc.is_connected():
             # Only disconnect if we're not currently playing
             player = self.players.get(guild_id)
             if player is None or not player.is_playing():
+                self.voice_connections.pop(guild_id, None)
                 await vc.disconnect()
                 log.info("Disconnected from voice in guild %s (idle timeout)", guild_id)
 
@@ -226,6 +239,7 @@ class PrayerBot(discord.Client):
 
     async def _on_pre_prayer(self, guild_id: str) -> None:
         """Called 5 min before scheduled prayer — join voice early."""
+        self._cancel_disconnect_task(guild_id)
         await self._ensure_voice_connected(guild_id)
 
     def _source_factory(self, path: str, seek_seconds: float, volume_percent: int):
@@ -318,19 +332,38 @@ class PrayerBot(discord.Client):
             return
 
         vc = self.voice_connections.get(guild_id)
-        if vc is None:
+        
+        # Check listener count in the channel the bot is in (or should be in)
+        channel = vc.channel if (vc and vc.is_connected()) else None
+        if channel is None:
+            cfg = get_guild_config(self.db, guild_id)
+            if cfg and cfg.voice_channel_id:
+                guild = self.get_guild(int(guild_id))
+                if guild:
+                    channel = guild.get_channel(int(cfg.voice_channel_id))
+        
+        if channel is None:
             return
 
-        # Check listener count in our voice channel
-        listeners = [m for m in vc.channel.members if not m.bot] if vc.channel else []
+        listeners = [m for m in channel.members if not m.bot]
         listener_count = len(listeners)
 
         if listener_count == 0 and player.is_playing():
             await player.pause()
             log.info("Guild %s: last listener left — paused", guild_id)
+            # Schedule disconnect after 5 minutes of being paused (idle)
+            self._cancel_disconnect_task(guild_id)
+            task = asyncio.create_task(self._disconnect_voice_after_delay(guild_id, 300))
+            self._disconnect_tasks[guild_id] = task
         elif listener_count > 0 and not player.is_playing() and player.current_track is not None:
-            await player.resume()
-            log.info("Guild %s: listener joined — resuming", guild_id)
+            # Only resume if it was actually paused
+            if player.state.is_paused:
+                self._cancel_disconnect_task(guild_id)
+                vc = await self._ensure_voice_connected(guild_id)
+                if vc:
+                    player.voice_client = vc
+                    await player.resume()
+                    log.info("Guild %s: listener joined — resumed", guild_id)
 
     # ------------------------------------------------------------------ command loop
 
@@ -501,6 +534,44 @@ class PrayerBot(discord.Client):
                 await vc.disconnect()
         self.db.close()
         await super().close()
+
+    # ------------------------------------------------------------------ slash commands
+
+    def _setup_slash_commands(self) -> None:
+        @self.tree.command(name="start", description="Play a prayer adhoc")
+        @discord.app_commands.describe(prayer_type="The type of prayer to play")
+        @discord.app_commands.choices(prayer_type=[
+            discord.app_commands.Choice(name="Buddhist", value="buddhist"),
+            discord.app_commands.Choice(name="Christian", value="christian"),
+            discord.app_commands.Choice(name="Jewish", value="jewish"),
+            discord.app_commands.Choice(name="Sufi", value="sufi"),
+            discord.app_commands.Choice(name="Vedantic", value="vedantic"),
+            discord.app_commands.Choice(name="Three Daily", value="three_daily"),
+        ])
+        async def start_prayer(interaction: discord.Interaction, prayer_type: str):
+            guild_id = str(interaction.guild_id)
+            pt = PrayerType(prayer_type)
+            filename = get_audio_filename(pt)
+            
+            await interaction.response.defer(ephemeral=True)
+            
+            success = await self._play_prayer_callback(guild_id, pt, filename)
+            if success:
+                await interaction.followup.send(f"🕌 Playing **{pt.value.title()}** prayer.")
+            else:
+                await interaction.followup.send("❌ Failed to start prayer. Please check if I have voice permissions.")
+
+        @self.tree.command(name="exit", description="Stop the current prayer and leave the voice channel")
+        async def exit_prayer(interaction: discord.Interaction):
+            guild_id = str(interaction.guild_id)
+            
+            # Use the existing disconnect command logic
+            result = await self._handle_command("disconnect", {"guild_id": guild_id})
+            
+            if "ok" in result:
+                await interaction.response.send_message("👋 Disconnected and stopped any active prayer.", ephemeral=True)
+            else:
+                await interaction.response.send_message("❌ Not currently connected to a voice channel.", ephemeral=True)
 
 
 # ---------------------------------------------------------------------------
