@@ -31,7 +31,15 @@ from dashboard import commands as cmd_queue
 from db.database import Database
 from db import guilds as guilds_db
 from db.models import PrayerType
-from db.prayers import get_guild_config, get_audio_filename, log_prayer_played, get_weekly_schedule
+from db.prayers import (
+    cleanup_old_logs,
+    get_audio_filename,
+    get_guild_config,
+    get_weekly_schedule,
+    log_prayer_played,
+    log_voice_join,
+    log_voice_leave,
+)
 
 log = logging.getLogger(__name__)
 
@@ -541,9 +549,11 @@ class PrayerBot(discord.Client):
 
         guild_id = str(member.guild.id)
         
-        # 1. GREETING LOGIC
+        # 1. GREETING & VOICE LOGGING
         # User joined the channel the bot is in
         if after.channel is not None and (before.channel is None or before.channel.id != after.channel.id):
+            log_voice_join(self.db, guild_id, str(member.id), member.name, str(after.channel.id))
+            
             vc = self.voice_connections.get(guild_id)
             if vc and vc.is_connected() and vc.channel.id == after.channel.id:
                 player = self.players.get(guild_id)
@@ -564,6 +574,10 @@ class PrayerBot(discord.Client):
                                 await self._say_tts(guild_id, greeting)
                         
                         asyncio.create_task(_greet_after_delay())
+
+        # User left or moved
+        if before.channel is not None and (after.channel is None or before.channel.id != after.channel.id):
+            log_voice_leave(self.db, guild_id, str(member.id), str(before.channel.id))
 
         # 2. PAUSE/RESUME LOGIC
         # Skip if TTS is currently playing to avoid clobbering prayer state
@@ -736,9 +750,10 @@ class PrayerBot(discord.Client):
         await super().close()
 
     async def _automatic_cache_cleanup(self) -> None:
-        """Periodically delete TTS files from data/tts that are older than 30 days."""
+        """Periodically delete TTS files and old logs."""
         while not self.is_closed():
             try:
+                # 1. TTS File Cleanup
                 import time
                 now = time.time()
                 retention_period = 30 * 24 * 60 * 60 # 30 days in seconds
@@ -749,8 +764,13 @@ class PrayerBot(discord.Client):
                             if now - f.stat().st_mtime > retention_period:
                                 f.unlink()
                                 log.info("Deleted old TTS cache file: %s", f.name)
+                                
+                # 2. Database Log Cleanup (30 days)
+                cleanup_old_logs(self.db)
+                log.info("Cleaned up database logs older than 30 days.")
+                
             except Exception as exc:
-                log.exception("Automatic cache cleanup failed: %s", exc)
+                log.exception("Automatic cleanup failed: %s", exc)
                 
             # Run once a day (86400 seconds)
             await asyncio.sleep(86400)

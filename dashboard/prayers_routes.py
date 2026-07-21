@@ -66,9 +66,15 @@ async def prayer_history(
     require_auth(request)
     cfg = get_guild_config(db, guild_id)
     
-    # Get recent logs
-    rows = db.fetchall(
+    # Get recent prayer logs
+    prayer_rows = db.fetchall(
         "SELECT * FROM prayer_logs WHERE guild_id=? ORDER BY played_at DESC LIMIT 50",
+        (guild_id,)
+    )
+    
+    # Get recent voice session logs
+    voice_rows = db.fetchall(
+        "SELECT * FROM voice_session_logs WHERE guild_id=? ORDER BY joined_at DESC LIMIT 50",
         (guild_id,)
     )
     
@@ -79,7 +85,8 @@ async def prayer_history(
             "request": request,
             "guild_id": guild_id,
             "guild_name": cfg.guild_name if cfg else guild_id,
-            "logs": rows,
+            "prayer_logs": prayer_rows,
+            "voice_logs": voice_rows,
         },
     )
 
