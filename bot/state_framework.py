@@ -119,31 +119,26 @@ class BotState:
 
 
 class GuildScopedState(BotState):
-    """A BotState view scoped to one guild for the *Now Playing* message id.
+    """A BotState view scoped to one guild for all playback state.
 
-    The radio has a single shared playback cursor (current track, position,
-    volume, global pause flag), so those keys stay global. But each server
-    keeps its *own* Now Playing embed, so its saved message id must not
-    clobber the others'. This subclass overrides just that one key to be
-    per-guild while delegating everything else to the shared BotState.
+    The prayer bot has independent schedules per guild, so each server
+    keeps its own playback state (current track, position, paused flag)
+    plus its own Now Playing embed message id. This subclass scopes all
+    keys to the guild_id to avoid cross-server state clobbering.
     """
 
     def __init__(self, db: Database, guild_id: str = "") -> None:
         super().__init__(db)
-        self._np_key = (
-            f"now_playing_message_id:{guild_id}" if guild_id else BotStateKey.NOW_PLAYING_MESSAGE_ID
-        )
+        self.guild_id = guild_id
 
-    @property
-    def now_playing_message_id(self) -> int | None:
-        v = self.db.get_state(self._np_key)
-        if not v:
-            return None
-        try:
-            return int(v)
-        except ValueError:
-            return None
+    def get(self, key: str, default: str | None = None) -> str | None:
+        if key not in BOT_STATE_KEYS:
+            raise KeyError(f"unknown bot_state key {key!r}")
+        scoped_key = f"{key}:{self.guild_id}" if self.guild_id else key
+        return self.db.get_state(scoped_key, default)
 
-    @now_playing_message_id.setter
-    def now_playing_message_id(self, value: int | None) -> None:
-        self.db.set_state(self._np_key, "" if value is None else int(value))
+    def set(self, key: str, value: str | int | float | bool | None) -> None:
+        if key not in BOT_STATE_KEYS:
+            raise KeyError(f"unknown bot_state key {key!r}")
+        scoped_key = f"{key}:{self.guild_id}" if self.guild_id else key
+        self.db.set_state(scoped_key, value)
