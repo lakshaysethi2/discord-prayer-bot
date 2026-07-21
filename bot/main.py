@@ -141,7 +141,7 @@ class PrayerBot(discord.Client):
 
     async def _setup_guild(self, guild_id: str) -> None:
         """Set up scheduler for one guild if enabled. Does NOT join voice — voice is
-        only connected when a prayer is about to be recited (5 min before)."""
+        only connected when a prayer is about to be recited (10 min before)."""
         cfg = get_guild_config(self.db, guild_id)
         if cfg is None or not cfg.enabled:
             log.info("Guild %s not enabled — skipping setup", guild_id)
@@ -151,6 +151,9 @@ class PrayerBot(discord.Client):
         if guild is None:
             log.warning("Guild %s not found in connected guilds", guild_id)
             return
+
+        # Log bot permissions for troubleshooting
+        self._log_permissions(guild, cfg.voice_channel_id)
 
         # Register station for live-apply (no voice join yet)
         self.stations[guild_id] = {
@@ -654,6 +657,36 @@ class PrayerBot(discord.Client):
             # Sleep for 30 minutes (1800 seconds)
             await asyncio.sleep(1800)
 
+    def _log_permissions(self, guild: discord.Guild, voice_channel_id: str | None) -> None:
+        """Log the bot's permissions in the guild and target voice channel."""
+        me = guild.me
+        guild_perms = me.guild_permissions
+        
+        perm_list = {
+            "Connect": guild_perms.connect,
+            "Speak": guild_perms.speak,
+            "Manage Channels": guild_perms.manage_channels,
+            "Set VC Status": hasattr(guild_perms, "set_voice_channel_status") and guild_perms.set_voice_channel_status,
+            "Send Messages": guild_perms.send_messages,
+            "Use Slash Commands": True, # Always true if we reached here
+        }
+        
+        # Check channel-specific overrides if possible
+        if voice_channel_id:
+            channel = guild.get_channel(int(voice_channel_id))
+            if channel:
+                ch_perms = channel.permissions_for(me)
+                perm_list["Connect (Channel)"] = ch_perms.connect
+                perm_list["Speak (Channel)"] = ch_perms.speak
+                if hasattr(ch_perms, "set_voice_channel_status"):
+                    perm_list["Set VC Status (Channel)"] = ch_perms.set_voice_channel_status
+
+        granted = [name for name, val in perm_list.items() if val]
+        missing = [name for name, val in perm_list.items() if not val]
+        
+        log.info("Permissions for guild '%s': GRANTED=%s | MISSING=%s", 
+                 guild.name, ", ".join(granted), ", ".join(missing) if missing else "None")
+
     async def _update_all_voice_statuses(self) -> None:
         """Iterate over all enabled guilds and update their voice channel status."""
         log.info("Updating voice statuses for %d guilds", len(self.guilds))
@@ -666,8 +699,10 @@ class PrayerBot(discord.Client):
                 cfg = get_guild_config(self.db, guild_id)
                 
                 if not cfg or not cfg.enabled or not cfg.voice_channel_id:
-                    # If previously had a status, we might want to clear it, but for now just skip
                     continue
+
+                # Periodically re-log permissions at the start of a status update
+                self._log_permissions(guild, cfg.voice_channel_id)
                     
                 voice_channel = guild.get_channel(int(cfg.voice_channel_id))
                 if voice_channel is None:
