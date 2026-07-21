@@ -255,8 +255,7 @@ class Player:
         async with self._lock:
             self.state.stream_volume_percent = volume
             # If we are currently playing, restart the source to apply volume
-            # In discord.py, you cannot change FFmpeg volume mid-stream without a restart
-            if self.is_playing():
+            if self.current_track is not None and self.is_playing():
                 position = self.clock.stop()
                 await self._start_locked(self.current_track, seek_seconds=position)
         return volume
