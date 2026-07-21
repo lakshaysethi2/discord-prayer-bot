@@ -738,43 +738,52 @@ class PrayerBot(discord.Client):
                     else:
                         status = f"Next prayer in ~{mins}m"
                 
-                # 1. Official Voice Status (Only works if connected)
-                if guild.voice_client and guild.voice_client.channel.id == voice_channel.id:
+                # 1. Official Voice Status (Try if we have permission)
+                has_status_perm = hasattr(guild.me.guild_permissions, "set_voice_channel_status") and guild.me.guild_permissions.set_voice_channel_status
+                # Also check channel overrides
+                ch_perms = voice_channel.permissions_for(guild.me)
+                if hasattr(ch_perms, "set_voice_channel_status"):
+                    has_status_perm = ch_perms.set_voice_channel_status
+
+                if has_status_perm:
                     try:
                         if hasattr(voice_channel, "set_status"):
                             await voice_channel.set_status(status)
                         else:
                             await voice_channel.edit(status=status)
-                    except Exception:
-                        pass # Likely no permission, fallback to rename
-
-                # 2. Channel Rename Fallback (Works always)
-                # Save original name if we haven't yet
-                original_name = cfg.original_voice_name
-                current_name = voice_channel.name
-                
-                if not original_name or (not current_name.startswith("(") and current_name != original_name):
-                    original_name = current_name
-                    guilds_db.apply_guild_config(self.db, guild_id, enabled=cfg.enabled, 
-                                       voice_channel_id=cfg.voice_channel_id,
-                                       text_channel_id=cfg.text_channel_id,
-                                       timezone_offset_hours=cfg.timezone_offset_hours,
-                                       tts_voice=cfg.tts_voice,
-                                       original_voice_name=original_name)
-
-                # Format new name: "(Status) Original Name"
-                new_name = f"({status.replace('Next prayer in ', '')}) {original_name}"
-                if len(new_name) > 100:
-                    new_name = new_name[:97] + "..."
-                
-                if current_name != new_name:
-                    try:
-                        await voice_channel.edit(name=new_name)
-                        log.info("Renamed VC for guild %s to: %s", guild_id, new_name)
-                    except discord.Forbidden:
-                        log.warning("Missing 'Manage Channels' permission in guild %s to show countdown.", guild_id)
+                        log.info("Set official VC status for guild %s: %s", guild_id, status)
                     except Exception as exc:
-                        log.debug("Rename failed for guild %s: %s", guild_id, exc)
+                        log.debug("Official VC status failed for guild %s (expected if not connected): %s", guild_id, exc)
+
+                # 2. Channel Rename Fallback (Only if Manage Channels is granted)
+                if guild.me.guild_permissions.manage_channels:
+                    # Save original name if we haven't yet
+                    original_name = cfg.original_voice_name
+                    current_name = voice_channel.name
+                    
+                    if not original_name or (not current_name.startswith("(") and current_name != original_name):
+                        original_name = current_name
+                        guilds_db.apply_guild_config(self.db, guild_id, enabled=cfg.enabled, 
+                                           voice_channel_id=cfg.voice_channel_id,
+                                           text_channel_id=cfg.text_channel_id,
+                                           timezone_offset_hours=cfg.timezone_offset_hours,
+                                           tts_voice=cfg.tts_voice,
+                                           original_voice_name=original_name)
+
+                    # Format new name: "(Status) Original Name"
+                    status_clean = status.replace('Next prayer in ', '')
+                    new_name = f"({status_clean}) {original_name}"
+                    if len(new_name) > 100:
+                        new_name = new_name[:97] + "..."
+                    
+                    if current_name != new_name:
+                        try:
+                            await voice_channel.edit(name=new_name)
+                            log.info("Renamed VC for guild %s to: %s", guild_id, new_name)
+                        except Exception as exc:
+                            log.debug("Rename failed for guild %s: %s", guild_id, exc)
+                else:
+                    log.debug("Skipping rename fallback for guild %s (missing Manage Channels)", guild_id)
                     
             except Exception as exc:
                 log.warning("Unexpected error updating status for guild %s: %s", guild_id, exc)
