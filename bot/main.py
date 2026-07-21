@@ -64,6 +64,7 @@ class PrayerBot(discord.Client):
         self._command_task: asyncio.Task | None = None
         self._running = False
         self.tree = discord.app_commands.CommandTree(self)
+        self._tts_playing: set[str] = set() # guild_id -> is_tts_active
 
     # ------------------------------------------------------------------ lifecycle
 
@@ -259,10 +260,8 @@ class PrayerBot(discord.Client):
 
         # Ensure we don't interrupt a real prayer
         player = self.players.get(guild_id)
-        if player and player.is_playing():
-            # If it's not a TTS clip, don't interrupt
-            if "tts_" not in (player.current_track.track_id if player.current_track else ""):
-                return
+        if player and player.is_playing() and not (guild_id in self._tts_playing):
+            return
 
         hash_text = hashlib.sha1(text.encode()).hexdigest()
         filepath = TTS_DIR / f"tts_{hash_text}.mp3"
@@ -270,13 +269,20 @@ class PrayerBot(discord.Client):
             communicate = edge_tts.Communicate(text, "en-US-GuyNeural")
             await communicate.save(str(filepath))
 
-        source = self._source_factory(str(filepath), 0, self.bot_state.stream_volume_percent)
+        scoped_state = GuildScopedState(self.db, guild_id)
+        source = self._source_factory(str(filepath), 0, scoped_state.stream_volume_percent)
         
         # Stop any current playback (including previous TTS)
         if vc.is_playing():
             vc.stop()
             
-        vc.play(source)
+        def after_tts(exc):
+            if exc:
+                log.warning("TTS error in guild %s: %s", guild_id, exc)
+            self._tts_playing.discard(guild_id)
+
+        self._tts_playing.add(guild_id)
+        vc.play(source, after=after_tts)
         log.info("Played TTS in guild %s: %s", guild_id, text)
 
     async def _on_pre_prayer(self, guild_id: str) -> None:
@@ -421,7 +427,7 @@ class PrayerBot(discord.Client):
             if vc and vc.is_connected() and vc.channel.id == after.channel.id:
                 player = self.players.get(guild_id)
                 # Only greet if NOT playing a prayer
-                is_playing_prayer = player and player.is_playing() and "tts_" not in (player.current_track.track_id if player.current_track else "")
+                is_playing_prayer = player and player.is_playing() and not (guild_id in self._tts_playing)
                 
                 if not is_playing_prayer:
                     minutes_left = self._get_next_prayer_minutes(guild_id)
