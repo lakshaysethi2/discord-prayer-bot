@@ -270,6 +270,8 @@ class PrayerBot(discord.Client):
             await communicate.save(str(filepath))
             
         # Re-check guard after network await to avoid TOCTOU
+        # Re-fetch player to avoid stale reference
+        player = self.players.get(guild_id)
         if player and player.is_playing() and not (guild_id in self._tts_playing):
             return
 
@@ -446,6 +448,8 @@ class PrayerBot(discord.Client):
             return
 
         player = self.players.get(guild_id)
+        if player is None:
+            return
 
         channel = self._get_listening_channel(guild_id)
         if channel is None:
