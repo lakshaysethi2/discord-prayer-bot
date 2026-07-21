@@ -72,7 +72,7 @@ document.getElementById('tz-info').textContent = tz + ' (UTC' + (off>=0?'+':'') 
 document.querySelectorAll('.time-inp').forEach(inp => {
   if (!inp.dataset.utc) return;
   const [h,m] = inp.dataset.utc.split(':').map(Number);
-  const d = new Date(Date.UTC(2024,0,1,h,m));
+  const d = new Date(); d.setUTCHours(h, m, 0, 0);
   inp.value = String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
 });
 
@@ -82,11 +82,8 @@ document.getElementById('schedule-form').addEventListener('submit', function(e) 
   document.querySelectorAll('.time-inp').forEach(inp => {
     if (!inp.value) return;
     const [h,m] = inp.value.split(':').map(Number);
-    // Use same fixed reference date (2024-01-01) as init
-    const d = new Date(2024, 0, 1, h, m);
-    const utcH = d.getUTCHours();
-    const utcM = d.getUTCMinutes();
-    inp.value = '2024-01-01T' + String(utcH).padStart(2,'0') + ':' + String(utcM).padStart(2,'0') + ':00.000Z';
+    const d = new Date(); d.setHours(h, m, 0, 0);
+    inp.value = String(d.getUTCHours()).padStart(2,'0') + ':' + String(d.getUTCMinutes()).padStart(2,'0');
   });
   this.submit();
 });

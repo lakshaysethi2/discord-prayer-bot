@@ -9,7 +9,8 @@ function pad(n) {
 
 function utcToLocal(utcTime) {
   const [h, m] = utcTime.split(':').map(Number);
-  const d = new Date(Date.UTC(2024, 0, 1, h, m));
+  const d = new Date();
+  d.setUTCHours(h, m, 0, 0);
   return pad(d.getHours()) + ':' + pad(d.getMinutes());
 }
 
