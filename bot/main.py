@@ -1050,7 +1050,7 @@ class PrayerBot(discord.Client):
             embed = discord.Embed(
                 title=f"🕌 Next Prayer: {tradition}",
                 description=f"The next recitation will begin in **{countdown}**.",
-                color=discord.Color.indigo()
+                color=discord.Color.blue()
             )
             embed.add_field(name="Time", value=f"**{time_str}** ({day_str})", inline=True)
             embed.add_field(name="Timezone", value=tz_name, inline=True)
