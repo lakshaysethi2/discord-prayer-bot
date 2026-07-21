@@ -113,6 +113,7 @@ SCHEMA: tuple[str, ...] = (
         voice_channel_id  TEXT,
         text_channel_id   TEXT,
         timezone_offset_hours REAL DEFAULT 0.0,
+        tts_voice         TEXT DEFAULT 'en-US-GuyNeural',
         updated_at        DATETIME
     )
     """,
@@ -207,6 +208,7 @@ class GuildConfig:
     voice_channel_id: str | None
     text_channel_id: str | None
     timezone_offset_hours: float = 0.0
+    tts_voice: str = "en-US-GuyNeural"
     updated_at: str | None = None
 
 

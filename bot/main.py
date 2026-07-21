@@ -262,9 +262,17 @@ class PrayerBot(discord.Client):
             return
 
         hash_text = hashlib.sha1(text.encode()).hexdigest()
-        filepath = TTS_DIR / f"tts_{hash_text}.mp3"
+        
+        # Get per-guild TTS voice config
+        cfg = get_guild_config(self.db, guild_id)
+        voice = cfg.tts_voice if cfg and cfg.tts_voice else "en-US-GuyNeural"
+        
+        # Cache key should include the voice to avoid playback with wrong voice from cache
+        cache_key = hashlib.sha1(f"{voice}:{text}".encode()).hexdigest()
+        filepath = TTS_DIR / f"tts_{cache_key}.mp3"
+        
         if not filepath.exists():
-            communicate = edge_tts.Communicate(text, "en-US-GuyNeural")
+            communicate = edge_tts.Communicate(text, voice)
             await communicate.save(str(filepath))
             
         # Re-check guard after network await to avoid TOCTOU

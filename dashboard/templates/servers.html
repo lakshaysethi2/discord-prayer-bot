@@ -62,6 +62,16 @@
             {% endfor %}
           </select>
         </label>
+
+        <label class="text-sm">
+          <span class="block text-slate-400 mb-1">Bot Voice (TTS)</span>
+          <select name="tts_voice"
+                  class="w-full rounded bg-slate-800 border border-slate-700 px-2 py-1.5 text-slate-100">
+            <option value="en-US-GuyNeural" {{ "selected" if s.tts_voice == "en-US-GuyNeural" else "" }}>Male (Guy)</option>
+            <option value="en-US-AriaNeural" {{ "selected" if s.tts_voice == "en-US-AriaNeural" else "" }}>Female (Aria)</option>
+            <option value="en-GB-SoniaNeural" {{ "selected" if s.tts_voice == "en-GB-SoniaNeural" else "" }}>British (Sonia)</option>
+          </select>
+        </label>
       </div>
 
       <div class="mt-3 flex items-center justify-between">

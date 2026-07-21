@@ -28,6 +28,7 @@ class GuildConfig:
     voice_channel_id: str | None
     text_channel_id: str | None
     timezone_offset_hours: float = 0.0
+    tts_voice: str = "en-US-GuyNeural"
     updated_at: str | None = None
 
 
@@ -83,19 +84,21 @@ def apply_guild_config(
     voice_channel_id: str | None = None,
     text_channel_id: str | None = None,
     timezone_offset_hours: float = 0.0,
+    tts_voice: str = "en-US-GuyNeural",
 ) -> None:
     """Persist an admin's per-server choices (dashboard save)."""
     db.execute(
         "INSERT INTO guild_configs"
-        "(guild_id, enabled, voice_channel_id, text_channel_id, timezone_offset_hours, updated_at) "
-        "VALUES(?, ?, ?, ?, ?, CURRENT_TIMESTAMP) "
+        "(guild_id, enabled, voice_channel_id, text_channel_id, timezone_offset_hours, tts_voice, updated_at) "
+        "VALUES(?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP) "
         "ON CONFLICT(guild_id) DO UPDATE SET "
         "enabled=excluded.enabled, "
         "voice_channel_id=excluded.voice_channel_id, "
         "text_channel_id=excluded.text_channel_id, "
         "timezone_offset_hours=excluded.timezone_offset_hours, "
+        "tts_voice=excluded.tts_voice, "
         "updated_at=CURRENT_TIMESTAMP",
-        (guild_id, bool(enabled), voice_channel_id or None, text_channel_id or None, float(timezone_offset_hours)),
+        (guild_id, bool(enabled), voice_channel_id or None, text_channel_id or None, float(timezone_offset_hours), tts_voice),
     )
 
 
@@ -139,6 +142,7 @@ def _row(r) -> GuildConfig:
         voice_channel_id=r["voice_channel_id"],
         text_channel_id=r["text_channel_id"],
         timezone_offset_hours=float(r["timezone_offset_hours"] or 0.0),
+        tts_voice=r["tts_voice"] if "tts_voice" in r.keys() and r["tts_voice"] else "en-US-GuyNeural",
         updated_at=r["updated_at"],
     )
 

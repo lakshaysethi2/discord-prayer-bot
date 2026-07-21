@@ -391,6 +391,7 @@ async def servers_page(
             "enabled": cfg.enabled if cfg else False,
             "voice_channel_id": cfg.voice_channel_id if cfg else None,
             "text_channel_id": cfg.text_channel_id if cfg else None,
+            "tts_voice": cfg.tts_voice if cfg else "en-US-GuyNeural",
             "voice_channels": voice_channels,
             "text_channels": text_channels,
         })
@@ -420,6 +421,7 @@ async def servers_update(
     enabled: str = Form("off"),
     voice_channel_id: str = Form(""),
     text_channel_id: str = Form(""),
+    tts_voice: str = Form("en-US-GuyNeural"),
     db: Database = Depends(get_db),
 ):
     require_auth(request)
@@ -431,6 +433,7 @@ async def servers_update(
         enabled=wants_enabled,
         voice_channel_id=voice_channel_id or None,
         text_channel_id=text_channel_id or None,
+        tts_voice=tts_voice,
     )
     # Enqueue live apply (no restart) — task 3 / 4
     from dashboard.commands import enqueue
