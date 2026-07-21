@@ -71,9 +71,6 @@ class PrayerBot(discord.Client):
 
     async def setup_hook(self) -> None:
         """Called by discord.py when the bot is starting up."""
-        # Start the voice status update loop early (it waits for ready internally)
-        self._status_task = asyncio.create_task(self._voice_status_loop())
-
         try:
             self._setup_slash_commands()
             # This is for global sync. For instant testing, you can use:
@@ -104,6 +101,10 @@ class PrayerBot(discord.Client):
 
         # Start the dashboard command poll loop
         self._command_task = asyncio.create_task(self._command_loop())
+
+        # Start the voice status update loop if not already running
+        if not self._status_task or self._status_task.done():
+            self._status_task = asyncio.create_task(self._voice_status_loop())
 
         log.info("Prayer Bot ready — %d guilds, %d schedulers active",
                  len(self.guilds), len(self.schedulers))
@@ -648,16 +649,25 @@ class PrayerBot(discord.Client):
 
     async def _update_all_voice_statuses(self) -> None:
         """Iterate over all enabled guilds and update their voice channel status."""
+        log.info("Updating voice statuses for %d guilds", len(self.guilds))
         for guild in self.guilds:
             guild_id = str(guild.id)
             try:
                 cfg = get_guild_config(self.db, guild_id)
                 
                 if not cfg or not cfg.enabled or not cfg.voice_channel_id:
+                    log.debug("Guild %s skipped for status update (not enabled or no VC ID)", guild_id)
                     continue
                     
                 voice_channel = guild.get_channel(int(cfg.voice_channel_id))
-                if not isinstance(voice_channel, discord.VoiceChannel):
+                if voice_channel is None:
+                    try:
+                        voice_channel = await guild.fetch_channel(int(cfg.voice_channel_id))
+                    except Exception:
+                        log.warning("Could not find voice channel %s for guild %s", cfg.voice_channel_id, guild_id)
+                        continue
+
+                if not isinstance(voice_channel, (discord.VoiceChannel, discord.StageChannel)):
                     continue
                 
                 # Check if prayer is actually in progress (playing audio)
@@ -681,8 +691,13 @@ class PrayerBot(discord.Client):
                         else:
                             status = f"Next prayer in ~{mins}m"
                 
-                await voice_channel.edit(status=status)
-                log.info("Updated status for guild %s: %s", guild_id, status)
+                # Use set_status if available (2.4.0+), else fallback to edit
+                if hasattr(voice_channel, "set_status"):
+                    await voice_channel.set_status(status, reason="Periodic prayer update")
+                else:
+                    await voice_channel.edit(status=status)
+                    
+                log.info("Updated status for guild %s (%s): %s", guild_id, voice_channel.name, status)
             except discord.Forbidden:
                 log.warning("Missing permissions to set voice status in guild %s", guild_id)
             except Exception as exc:
