@@ -16,7 +16,7 @@ log = logging.getLogger(__name__)
 class PrayerScheduler:
     """Checks every 30 seconds for prayers that should play now or soon.
     
-    - Calls on_pre_prayer(guild_id) 5 min before scheduled prayer time.
+    - Calls on_pre_prayer(guild_id) 10 min before scheduled prayer time.
     - Calls play_prayer(guild_id, prayer_type, filename) at exact prayer time.
     """
 
@@ -56,18 +56,18 @@ class PrayerScheduler:
                 await self._check_and_play()
             except Exception as exc:
                 log.exception("Prayer scheduler error: %s", exc)
-            await asyncio.sleep(30)  # check every 30s for 5-min pre-join precision
+            await asyncio.sleep(30)  # check every 30s for pre-join precision
 
     async def _check_and_play(self):
         now = datetime.now(self.timezone)
         weekday = now.weekday()
         current_time = now.time().replace(second=0, microsecond=0)
 
-        # Also check 5 minutes ahead for pre-join
-        pre_join_time = (now + timedelta(minutes=5)).time().replace(second=0, microsecond=0)
+        # Also check 10 minutes ahead for pre-join
+        pre_join_time = (now + timedelta(minutes=10)).time().replace(second=0, microsecond=0)
         # Handle day wrap for pre-join check
         pre_join_weekday = weekday
-        if (now + timedelta(minutes=5)).weekday() != weekday:
+        if (now + timedelta(minutes=10)).weekday() != weekday:
             pre_join_weekday = (weekday + 1) % 7
 
         schedules = get_weekly_schedule(self.db, self.guild_id)

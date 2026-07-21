@@ -6,3 +6,4 @@ discord.py[voice]>=2.3.0
 pytz>=2023.0
 pytest>=7.0.0
 httpx>=0.24.0
+edge-tts>=6.1.0
