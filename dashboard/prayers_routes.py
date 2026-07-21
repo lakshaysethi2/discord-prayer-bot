@@ -134,6 +134,11 @@ async def prayers_admin(
     guild_rows = db.fetchall("SELECT guild_id, guild_name FROM guild_configs ORDER BY guild_name, guild_id")
     all_guilds = [{"guild_id": r["guild_id"], "name": r["guild_name"] or r["guild_id"]} for r in guild_rows]
     current_guild_name = cfg.guild_name if cfg else guild_id
+    
+    # Get current volume for this guild
+    from bot.state_framework import GuildScopedState
+    scoped_state = GuildScopedState(db, guild_id)
+    current_volume = scoped_state.stream_volume_percent
 
     return templates.TemplateResponse(
         request,
@@ -143,6 +148,7 @@ async def prayers_admin(
             "guild_name": current_guild_name,
             "all_guilds": all_guilds,
             "schedules": existing,
+            "current_volume": current_volume,
             "get_audio_filename": get_audio_filename,
         },
     )
