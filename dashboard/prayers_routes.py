@@ -61,20 +61,32 @@ async def health_check(db: Database = Depends(get_db)):
 async def prayer_history(
     request: Request,
     guild_id: str,
+    user_id: str | None = Query(None),
     db: Database = Depends(get_db),
 ):
     require_auth(request)
     cfg = get_guild_config(db, guild_id)
     
-    # Get recent prayer logs
+    # Get recent prayer logs (Only last 10)
     prayer_rows = db.fetchall(
-        "SELECT * FROM prayer_logs WHERE guild_id=? ORDER BY played_at DESC LIMIT 50",
+        "SELECT * FROM prayer_logs WHERE guild_id=? ORDER BY played_at DESC LIMIT 10",
         (guild_id,)
     )
     
-    # Get recent voice session logs
-    voice_rows = db.fetchall(
-        "SELECT * FROM voice_session_logs WHERE guild_id=? ORDER BY joined_at DESC LIMIT 50",
+    # Base query for voice logs
+    voice_query = "SELECT * FROM voice_session_logs WHERE guild_id=?"
+    params = [guild_id]
+    
+    if user_id:
+        voice_query += " AND user_id=?"
+        params.append(user_id)
+    
+    voice_query += " ORDER BY joined_at DESC LIMIT 50"
+    voice_rows = db.fetchall(voice_query, tuple(params))
+    
+    # Get unique users for the filter dropdown
+    users = db.fetchall(
+        "SELECT DISTINCT user_id, username FROM voice_session_logs WHERE guild_id=? ORDER BY username ASC",
         (guild_id,)
     )
     
@@ -87,6 +99,8 @@ async def prayer_history(
             "guild_name": cfg.guild_name if cfg else guild_id,
             "prayer_logs": prayer_rows,
             "voice_logs": voice_rows,
+            "users": users,
+            "selected_user": user_id,
         },
     )
 
