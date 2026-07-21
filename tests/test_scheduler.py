@@ -34,22 +34,22 @@ def test_scheduler_pre_join():
             
             scheduler.timezone = pytz.utc
             
-            # T-5 minutes: should trigger pre-join
-            now = datetime(2024, 1, 1, 12, 0, 0, tzinfo=pytz.utc) # Monday
-            with patch('bot.prayer_scheduler.datetime') as mock_datetime:
-                mock_datetime.now.return_value = now
-                await scheduler._check_and_play()
-                
-            assert len(pre_join_calls) == 1
-            assert len(played_calls) == 0
+        # T-10 minutes: should trigger pre-join
+        now = datetime(2024, 1, 1, 11, 55, 0, tzinfo=pytz.utc) # Monday
+        with patch('bot.prayer_scheduler.datetime') as mock_datetime:
+            mock_datetime.now.return_value = now
+            await scheduler._check_and_play()
             
-            # T-4 minutes: no new pre-join (already in set)
-            now = datetime(2024, 1, 1, 12, 1, 0, tzinfo=pytz.utc)
-            with patch('bot.prayer_scheduler.datetime') as mock_datetime:
-                mock_datetime.now.return_value = now
-                await scheduler._check_and_play()
-            assert len(pre_join_calls) == 1
-            
+        assert len(pre_join_calls) == 1
+        assert len(played_calls) == 0
+        
+        # T-9 minutes: no new pre-join (already in set)
+        now = datetime(2024, 1, 1, 11, 56, 0, tzinfo=pytz.utc)
+        with patch('bot.prayer_scheduler.datetime') as mock_datetime:
+            mock_datetime.now.return_value = now
+            await scheduler._check_and_play()
+        assert len(pre_join_calls) == 1
+
             # T-0 minutes: play prayer
             now = datetime(2024, 1, 1, 12, 5, 0, tzinfo=pytz.utc)
             with patch('bot.prayer_scheduler.datetime') as mock_datetime:
