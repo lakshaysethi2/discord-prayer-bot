@@ -755,7 +755,7 @@ class PrayerBot(discord.Client):
                 
                 if not original_name or (not current_name.startswith("(") and current_name != original_name):
                     original_name = current_name
-                    apply_guild_config(self.db, guild_id, enabled=cfg.enabled, 
+                    guilds_db.apply_guild_config(self.db, guild_id, enabled=cfg.enabled, 
                                        voice_channel_id=cfg.voice_channel_id,
                                        text_channel_id=cfg.text_channel_id,
                                        timezone_offset_hours=cfg.timezone_offset_hours,
