@@ -341,26 +341,38 @@ class PrayerBot(discord.Client):
         queue = self._tts_queues[guild_id]
         while not self.is_closed():
             try:
+                # Wait for next TTS item
                 item = await queue.get()
                 text, done_event = item if isinstance(item, tuple) else (item, None)
+                
+                log.debug("TTS worker in guild %s processing: %s", guild_id, text)
                 try:
-                    await self._process_tts(guild_id, text)
+                    # Wait for individual TTS playback to complete (with safety timeout)
+                    await asyncio.wait_for(self._process_tts(guild_id, text), timeout=60.0)
+                except asyncio.TimeoutError:
+                    log.warning("TTS playback timed out in guild %s", guild_id)
+                except Exception as exc:
+                    log.exception("Error processing TTS in guild %s: %s", guild_id, exc)
                 finally:
                     if done_event:
                         done_event.set()
                     queue.task_done()
             except Exception:
-                log.exception("TTS worker error in guild %s", guild_id)
+                log.exception("Fatal error in TTS worker loop for guild %s", guild_id)
+                await asyncio.sleep(1) # Prevent tight error loop
 
     async def _process_tts(self, guild_id: str, text: str) -> None:
         """Generate and play a single TTS audio clip."""
         vc = self.voice_connections.get(guild_id)
         if not vc or not vc.is_connected():
+            log.debug("TTS skipped: Bot not connected to voice in guild %s", guild_id)
             return
 
         # Guard: Ensure we don't interrupt a real prayer
+        # Re-fetch player to ensure we have current state
         player = self.players.get(guild_id)
         if player and player.is_playing() and not (guild_id in self._tts_playing):
+            log.debug("TTS skipped: Real prayer currently playing in guild %s", guild_id)
             return
 
         # Get per-guild TTS voice config
@@ -370,36 +382,49 @@ class PrayerBot(discord.Client):
         cache_key = hashlib.sha1(f"{voice}:{text}".encode()).hexdigest()
         filepath = TTS_DIR / f"tts_{cache_key}.mp3"
         
-        if not filepath.exists():
-            communicate = edge_tts.Communicate(text, voice)
-            await communicate.save(str(filepath))
+        try:
+            if not filepath.exists():
+                communicate = edge_tts.Communicate(text, voice)
+                await communicate.save(str(filepath))
+        except Exception as exc:
+            log.error("Failed to generate TTS for guild %s: %s", guild_id, exc)
+            return
             
         # Re-check guard after network await
         player = self.players.get(guild_id)
         if player and player.is_playing() and not (guild_id in self._tts_playing):
             return
 
-        # TTS always plays at 100% volume to keep greetings consistent
-        # regardless of prayer volume boost.
+        # TTS always plays at 100% volume
         source = self._source_factory(str(filepath), 0, 100)
         
+        # Stop previous TTS if still playing
         if vc.is_playing():
             vc.stop()
+            await asyncio.sleep(0.5) # Give FFmpeg a moment to clean up
             
         playback_done = asyncio.Event()
+        loop = asyncio.get_running_loop()
+
         def after_tts(exc):
             if exc:
-                log.warning("TTS error in guild %s: %s", guild_id, exc)
+                log.warning("TTS playback error in guild %s: %s", guild_id, exc)
             self._tts_playing.discard(guild_id)
-            # Safe call back into the main loop
-            self.loop.call_soon_threadsafe(playback_done.set)
+            if not loop.is_closed():
+                loop.call_soon_threadsafe(playback_done.set)
 
         self._tts_playing.add(guild_id)
-        vc.play(source, after=after_tts)
+        try:
+            log.info("TTS Start in guild %s: %s", guild_id, text)
+            vc.play(source, after=after_tts)
+            # Wait for this specific clip to finish (with safety timeout)
+            await asyncio.wait_for(playback_done.wait(), timeout=30.0)
+        except Exception as exc:
+            log.error("Failed to play TTS in guild %s: %s", guild_id, exc)
+            self._tts_playing.discard(guild_id)
+            playback_done.set()
         
-        # Wait for this specific clip to finish before worker picks up next
-        await playback_done.wait()
-        log.debug("Finished playing TTS in guild %s: %s", guild_id, text)
+        log.debug("Finished process_tts in guild %s", guild_id)
 
     async def _log_to_channel(self, guild_id: str, message: str) -> None:
         """Send a log message to the guild's configured logging channel."""
@@ -489,11 +514,16 @@ class PrayerBot(discord.Client):
 
         # Adhoc specific flow: 5s pause, announcement, 5s pause
         if is_adhoc:
+            log.info("Starting adhoc prayer sequence for guild %s", guild_id)
             await asyncio.sleep(5)
             # Use the queue and wait for the announcement to finish
             announce_done = asyncio.Event()
             await self._say_tts(guild_id, f"Reciting {prayer_type.value.title()} prayers.", done_event=announce_done)
-            await announce_done.wait()
+            try:
+                # Safety timeout for the announcement
+                await asyncio.wait_for(announce_done.wait(), timeout=30.0)
+            except asyncio.TimeoutError:
+                log.warning("Adhoc announcement timed out in guild %s, continuing...", guild_id)
             await asyncio.sleep(5)
 
         # Create or reuse player with current voice client
