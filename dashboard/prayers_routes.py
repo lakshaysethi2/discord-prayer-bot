@@ -492,6 +492,8 @@ async def prayers_public(
             "all_guilds": all_guilds,
             "schedules_by_day": schedules_by_day,
             "next_prayer": next_prayer,
+            "current_tz": current_tz,
+            "all_timezones": pytz.common_timezones,
             "voice_channel_id": cfg.voice_channel_id if cfg else "",
         },
     )

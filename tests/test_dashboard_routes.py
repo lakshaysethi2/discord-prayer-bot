@@ -15,10 +15,10 @@ def test_health_check():
 
 def test_bulk_action_disable_all():
     # This just tests if the route exists and requires auth
-    response = client.post("/prayers/bulk-action", data={"guild_id": "test", "action": "disable_all"})
-    assert response.status_code == 303 or response.status_code == 401 or response.status_code == 403
+    response = client.post("/prayers/bulk-action", data={"guild_id": "test", "action": "disable_all"}, follow_redirects=False)
+    assert response.status_code in (302, 303, 401, 403)
 
 def test_history_page_requires_auth():
-    response = client.get("/history/test_guild")
+    response = client.get("/history/test_guild", follow_redirects=False)
     # Redirects or Unauthorized
     assert response.status_code in (302, 303, 401, 403)
