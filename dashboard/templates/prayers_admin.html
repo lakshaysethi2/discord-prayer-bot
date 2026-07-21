@@ -52,15 +52,18 @@
   </div>
 </div>
 
-<div class="flex gap-2 mb-4">
-  <button type="button" onclick="bulkAction('enable_all')"
-          class="flex-1 text-xs rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 py-2 text-slate-200">✅ Enable All</button>
-  <button type="button" onclick="bulkAction('disable_all')"
-          class="flex-1 text-xs rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 py-2 text-slate-200">❌ Disable All</button>
-</div>
-
 <form method="post" action="/prayers/save" id="schedule-form">
   <input type="hidden" name="guild_id" value="{{ guild_id }}">
+
+  <div class="flex items-center justify-between gap-2 mb-4">
+    <div class="flex gap-2">
+      <button type="button" onclick="bulkAction('enable_all')"
+              class="text-[10px] rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 px-2 py-1 text-slate-300 transition-colors">✅ Enable All</button>
+      <button type="button" onclick="bulkAction('disable_all')"
+              class="text-[10px] rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 px-2 py-1 text-slate-300 transition-colors">❌ Disable All</button>
+    </div>
+    <button type="submit" class="rounded bg-indigo-600 hover:bg-indigo-500 px-4 py-1.5 text-xs font-medium transition-colors">Save Schedule</button>
+  </div>
 
   {% set days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] %}
   {% set prayer_types = ["buddhist", "christian", "jewish", "sufi", "vedantic", "three_daily"] %}
