@@ -224,8 +224,13 @@ class PrayerBot(discord.Client):
             
         if existing and existing.is_connected():
             if existing.channel and str(existing.channel.id) == str(cfg.voice_channel_id):
+                # Update connection state in case it was stale in DB
+                scoped_state = GuildScopedState(self.db, guild_id)
+                scoped_state.is_connected = True
                 return existing
             await existing.move_to(voice_channel)
+            scoped_state = GuildScopedState(self.db, guild_id)
+            scoped_state.is_connected = True
             return existing
 
         try:
@@ -243,6 +248,10 @@ class PrayerBot(discord.Client):
                 
             self.voice_connections[guild_id] = vc
             log.info("Joined voice in guild %s for prayer", guild_id)
+            
+            # Persist connection state
+            scoped_state = GuildScopedState(self.db, guild_id)
+            scoped_state.is_connected = True
             
             # Greet people already in the room
             listeners = [m.display_name for m in voice_channel.members if not m.bot]
@@ -272,6 +281,10 @@ class PrayerBot(discord.Client):
                 await vc.disconnect()
                 log.info("Disconnected from voice in guild %s (idle timeout)", guild_id)
                 await self._log_to_channel(guild_id, "Disconnected from voice channel due to idle timeout.")
+                
+                # Persist connection state
+                scoped_state = GuildScopedState(self.db, guild_id)
+                scoped_state.is_connected = False
 
     def _cancel_disconnect_task(self, guild_id: str) -> None:
         """Cancel any pending disconnect timer for the guild."""
@@ -764,6 +777,11 @@ class PrayerBot(discord.Client):
                 await vc.disconnect()
                 log.info("Manually disconnected from voice in guild %s", guild_id)
                 await self._log_to_channel(guild_id, "Manually disconnected from voice channel.")
+                
+                # Persist connection state
+                scoped_state = GuildScopedState(self.db, guild_id)
+                scoped_state.is_connected = False
+                
                 return "ok:disconnected"
             return "ok:not_connected"
 
@@ -797,8 +815,11 @@ class PrayerBot(discord.Client):
             self._status_task.cancel()
         for scheduler in self.schedulers.values():
             await scheduler.stop()
-        for vc in self.voice_connections.values():
+        for guild_id, vc in self.voice_connections.items():
             with contextlib.suppress(Exception):
+                # Update DB state before actually disconnecting
+                scoped_state = GuildScopedState(self.db, guild_id)
+                scoped_state.is_connected = False
                 await vc.disconnect()
         self.db.close()
         await super().close()

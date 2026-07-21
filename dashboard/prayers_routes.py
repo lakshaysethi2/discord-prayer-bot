@@ -454,6 +454,12 @@ async def prayers_public(
 
     # Compute next upcoming prayer
     utc_now = datetime.now(pytz.UTC)
+    
+    # Check if live (connected to voice)
+    from bot.state_framework import GuildScopedState
+    scoped_state = GuildScopedState(db, guild_id)
+    is_live = scoped_state.is_connected
+
     current_weekday = utc_now.weekday()  # 0=Mon
     current_time = utc_now.time().replace(second=0, microsecond=0)
     next_prayer = None
@@ -494,6 +500,7 @@ async def prayers_public(
             "next_prayer": next_prayer,
             "current_tz": current_tz,
             "all_timezones": pytz.common_timezones,
+            "is_live": is_live,
             "voice_channel_id": cfg.voice_channel_id if cfg else "",
         },
     )
