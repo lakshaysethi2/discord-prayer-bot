@@ -666,7 +666,7 @@ class PrayerBot(discord.Client):
                 cfg = get_guild_config(self.db, guild_id)
                 
                 if not cfg or not cfg.enabled or not cfg.voice_channel_id:
-                    log.debug("Guild %s skipped for status update (not enabled or no VC ID)", guild_id)
+                    # If previously had a status, we might want to clear it, but for now just skip
                     continue
                     
                 voice_channel = guild.get_channel(int(cfg.voice_channel_id))
@@ -674,7 +674,6 @@ class PrayerBot(discord.Client):
                     try:
                         voice_channel = await guild.fetch_channel(int(cfg.voice_channel_id))
                     except Exception:
-                        log.warning("Could not find voice channel %s for guild %s", cfg.voice_channel_id, guild_id)
                         continue
 
                 if not isinstance(voice_channel, (discord.VoiceChannel, discord.StageChannel)):
@@ -682,53 +681,75 @@ class PrayerBot(discord.Client):
                 
                 # Check if prayer is actually in progress (playing audio)
                 player = self.players.get(guild_id)
-                if player and player.is_playing() and not (guild_id in self._tts_playing):
-                    status = "Prayer in progress"
-                else:
-                    minutes_left = self._get_next_prayer_minutes(guild_id)
-                    if minutes_left is not None:
-                        all_next_prayer_minutes.append(minutes_left)
-                        
-                    if minutes_left is None:
-                        status = "No prayers scheduled"
-                    elif minutes_left <= 0:
-                        status = "Prayer starting soon"
-                    else:
-                        days, remainder = divmod(minutes_left, 1440)
-                        hours, mins = divmod(remainder, 60)
-                        
-                        if days > 0:
-                            status = f"Next prayer in ~{days}d {hours}h"
-                        elif hours > 0:
-                            status = f"Next prayer in ~{hours}h {mins}m"
-                        else:
-                            status = f"Next prayer in ~{mins}m"
+                is_playing = player and player.is_playing() and not (guild_id in self._tts_playing)
                 
-                # Use set_status if available (2.4.0+), else fallback to edit
-                try:
-                    if hasattr(voice_channel, "set_status"):
-                        await voice_channel.set_status(status, reason="Periodic prayer update")
+                minutes_left = self._get_next_prayer_minutes(guild_id)
+                if minutes_left is not None:
+                    all_next_prayer_minutes.append(minutes_left)
+                
+                if is_playing:
+                    status = "Prayer in progress"
+                elif minutes_left is None:
+                    status = "No prayers scheduled"
+                elif minutes_left <= 0:
+                    status = "Prayer starting soon"
+                else:
+                    days, remainder = divmod(minutes_left, 1440)
+                    hours, mins = divmod(remainder, 60)
+                    if days > 0:
+                        status = f"Next prayer in ~{days}d {hours}h"
+                    elif hours > 0:
+                        status = f"Next prayer in ~{hours}h {mins}m"
                     else:
-                        await voice_channel.edit(status=status)
-                    log.info("Updated VC status for guild %s (%s): %s", guild_id, voice_channel.name, status)
-                except discord.Forbidden:
-                    log.warning("Missing 'Set Voice Channel Status' permission in guild %s (%s). Please grant this permission to the bot's role.", guild_id, guild.name)
-                except Exception as exc:
-                    log.warning("Could not set VC status for guild %s: %s", guild_id, exc)
+                        status = f"Next prayer in ~{mins}m"
+                
+                # 1. Official Voice Status (Only works if connected)
+                if guild.voice_client and guild.voice_client.channel.id == voice_channel.id:
+                    try:
+                        if hasattr(voice_channel, "set_status"):
+                            await voice_channel.set_status(status)
+                        else:
+                            await voice_channel.edit(status=status)
+                    except Exception:
+                        pass # Likely no permission, fallback to rename
+
+                # 2. Channel Rename Fallback (Works always)
+                # Save original name if we haven't yet
+                original_name = cfg.original_voice_name
+                current_name = voice_channel.name
+                
+                if not original_name or (not current_name.startswith("(") and current_name != original_name):
+                    original_name = current_name
+                    apply_guild_config(self.db, guild_id, enabled=cfg.enabled, 
+                                       voice_channel_id=cfg.voice_channel_id,
+                                       text_channel_id=cfg.text_channel_id,
+                                       timezone_offset_hours=cfg.timezone_offset_hours,
+                                       tts_voice=cfg.tts_voice,
+                                       original_voice_name=original_name)
+
+                # Format new name: "(Status) Original Name"
+                new_name = f"({status.replace('Next prayer in ', '')}) {original_name}"
+                if len(new_name) > 100:
+                    new_name = new_name[:97] + "..."
+                
+                if current_name != new_name:
+                    try:
+                        await voice_channel.edit(name=new_name)
+                        log.info("Renamed VC for guild %s to: %s", guild_id, new_name)
+                    except discord.Forbidden:
+                        log.warning("Missing 'Manage Channels' permission in guild %s to show countdown.", guild_id)
+                    except Exception as exc:
+                        log.debug("Rename failed for guild %s: %s", guild_id, exc)
                     
             except Exception as exc:
                 log.warning("Unexpected error updating status for guild %s: %s", guild_id, exc)
 
-        # Also update the bot's own activity status as a global indicator
+        # 3. Bot Activity Status
         if all_next_prayer_minutes:
             earliest_mins = min(all_next_prayer_minutes)
             h, m = divmod(earliest_mins, 60)
-            if h > 0:
-                activity_text = f"Next prayer in ~{h}h {m}m"
-            else:
-                activity_text = f"Next prayer in ~{m}m"
+            activity_text = f"Next prayer in ~{h}h {m}m" if h > 0 else f"Next prayer in ~{m}m"
             await self.change_presence(activity=discord.Game(name=activity_text))
-            log.info("Updated bot activity: %s", activity_text)
 
     # ------------------------------------------------------------------ slash commands
 
