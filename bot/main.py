@@ -17,9 +17,11 @@ import contextlib
 import logging
 import os
 import signal
+import hashlib
 from pathlib import Path
 
 import discord
+import edge_tts
 
 from bot.apply_server import apply_server_config as live_apply
 from bot.player_framework import Player, default_ffmpeg_source
@@ -29,9 +31,7 @@ from dashboard import commands as cmd_queue
 from db.database import Database
 from db import guilds as guilds_db
 from db.models import PrayerType
-from db.prayers import get_guild_config, get_audio_filename, log_prayer_played
-
-import edge_tts
+from db.prayers import get_guild_config, get_audio_filename, log_prayer_played, get_weekly_schedule
 
 log = logging.getLogger(__name__)
 
@@ -39,7 +39,6 @@ TOKEN = os.environ.get("DISCORD_BOT_TOKEN", "")
 DB_PATH = os.environ.get("DATABASE_PATH", "./data/prayer_bot.db")
 MEDIA_DIR = Path("media/prayers")
 TTS_DIR = Path("data/tts")
-TTS_DIR.mkdir(parents=True, exist_ok=True)
 
 # ---------------------------------------------------------------------------
 # Bot class
@@ -77,12 +76,15 @@ class PrayerBot(discord.Client):
         log.info("Prayer Bot logged in as %s (id=%s)", self.user, self.user.id)
         self._running = True
 
+        # Ensure TTS dir exists
+        TTS_DIR.mkdir(parents=True, exist_ok=True)
+
         # Register slash commands
-        if not hasattr(self, "_slash_commands_setup_done"):
+        if not hasattr(self, "_slash_commands_setup_done") or not self._slash_commands_setup_done:
             try:
                 self._setup_slash_commands()
-                self._slash_commands_setup_done = True
                 await self.tree.sync()
+                self._slash_commands_setup_done = True
                 log.info("Slash commands synced")
             except Exception as exc:
                 log.exception("Failed to sync slash commands: %s", exc)
@@ -156,7 +158,7 @@ class PrayerBot(discord.Client):
             play_prayer=self._play_prayer_callback,
             guild_id=guild_id,
         )
-        # Wire up pre-join: 5 min before prayer, ensure voice is connected
+        # Wire up pre-join: 10 min before prayer, ensure voice is connected
         scheduler.on_pre_prayer = self._on_pre_prayer
         self.schedulers[guild_id] = scheduler
         await scheduler.start()
@@ -255,45 +257,27 @@ class PrayerBot(discord.Client):
         if not vc or not vc.is_connected():
             return
 
-        # Ensure we have a player to manage playback (stops overlapping audio)
+        # Ensure we don't interrupt a real prayer
         player = self.players.get(guild_id)
-        if player is None:
-            guild_state = GuildScopedState(self.db, guild_id)
-            player = Player(
-                voice_client=vc,
-                provider=None,
-                state=guild_state,
-                loop=asyncio.get_running_loop(),
-                source_factory=self._source_factory,
-                persist_pause_state=False # Don't clobber real prayer pause state for TTS
-            )
-            self.players[guild_id] = player
-        else:
-            player.voice_client = vc
+        if player and player.is_playing():
+            # If it's not a TTS clip, don't interrupt
+            if "tts_" not in (player.current_track.track_id if player.current_track else ""):
+                return
 
-        # Stop whatever is playing if we are force-greeting or something? 
-        # Actually, requirements say only greet BEFORE prayer or AFTER.
-        # So it's safe to use the player.
-        
-        filepath = TTS_DIR / f"tts_{hash(text)}.mp3"
+        hash_text = hashlib.sha1(text.encode()).hexdigest()
+        filepath = TTS_DIR / f"tts_{hash_text}.mp3"
         if not filepath.exists():
             communicate = edge_tts.Communicate(text, "en-US-GuyNeural")
             await communicate.save(str(filepath))
 
-        from provider.client import TrackResponse
-        track = TrackResponse(
-            track_id=f"tts_{hash(text)}",
-            title="Notification",
-            duration_seconds=0,
-            local_path=str(filepath),
-            provider_used="local",
-            playlist_position=0,
-            ready=True,
-        )
-        # Use start but don't persist state if it's a notification
-        await player.start(track)
-        # Wait for it to finish or just let it play? 
-        # For simplicity, we just let it play. If a prayer starts immediately after, player.start will override.
+        source = self._source_factory(str(filepath), 0, self.bot_state.stream_volume_percent)
+        
+        # Stop any current playback (including previous TTS)
+        if vc.is_playing():
+            vc.stop()
+            
+        vc.play(source)
+        log.info("Played TTS in guild %s: %s", guild_id, text)
 
     async def _on_pre_prayer(self, guild_id: str) -> None:
         """Called 10 min before scheduled prayer — join voice early."""
@@ -310,14 +294,28 @@ class PrayerBot(discord.Client):
             options = f"-vn -af volume={volume_percent / 100:.2f} -loglevel warning"
         return discord.FFmpegPCMAudio(path, before_options=before, options=options)
 
+    # ------------------------------------------------------------------ helper
+
+    def _get_listening_channel(self, guild_id: str) -> discord.VoiceChannel | None:
+        """Find the voice channel we should be in for this guild."""
+        vc = self.voice_connections.get(guild_id)
+        if vc and vc.is_connected():
+            return vc.channel
+            
+        cfg = get_guild_config(self.db, guild_id)
+        if cfg and cfg.voice_channel_id:
+            guild = self.get_guild(int(guild_id))
+            if guild:
+                return guild.get_channel(int(cfg.voice_channel_id))
+        return None
+
     # ------------------------------------------------------------------ prayer playback
 
-    async def _play_prayer_callback(self, guild_id: str, prayer_type: PrayerType, filename: str) -> bool:
-        """Called by PrayerScheduler when a prayer should play.
-        Joins voice on-demand, plays, then schedules disconnect 5 min after."""
+    async def _start_prayer_playback(self, guild_id: str, prayer_type: PrayerType, filename: str) -> bool:
+        """Shared logic for starting a prayer (scheduled, adhoc, or slash)."""
         media_path = MEDIA_DIR / filename
         if not media_path.exists():
-            log.error("Audio file not found: %s", media_path)
+            log.error("Audio file not found for guild %s: %s", guild_id, media_path)
             return False
 
         # Ensure voice connected
@@ -377,7 +375,36 @@ class PrayerBot(discord.Client):
         log.info("Playing %s in guild %s (will disconnect 5 min after playback ends)", prayer_type.value, guild_id)
         return True
 
+    async def _play_prayer_callback(self, guild_id: str, prayer_type: PrayerType, filename: str) -> bool:
+        """Called by PrayerScheduler when a prayer should play."""
+        return await self._start_prayer_playback(guild_id, prayer_type, filename)
+
     # ------------------------------------------------------------------ voice state tracking
+
+    def _get_next_prayer_minutes(self, guild_id: str) -> int | None:
+        """Calculate minutes until the next scheduled prayer."""
+        schedules = get_weekly_schedule(self.db, guild_id)
+        if not schedules:
+            return None
+            
+        import pytz
+        from datetime import datetime, timedelta
+        now = datetime.now(pytz.UTC)
+        
+        best_dt = None
+        for s in schedules:
+            if not s.enabled: continue
+            days_ahead = (s.day_of_week - now.weekday()) % 7
+            if days_ahead == 0 and s.time_utc <= now.time():
+                days_ahead = 7
+            prayer_dt = now.replace(hour=s.time_utc.hour, minute=s.time_utc.minute, second=0, microsecond=0) + timedelta(days=days_ahead)
+            if best_dt is None or prayer_dt < best_dt:
+                best_dt = prayer_dt
+        
+        if best_dt:
+            delta = best_dt - now
+            return int(delta.total_seconds() / 60)
+        return None
 
     async def on_voice_state_update(self, member, before, after) -> None:
         """Auto-pause when last user leaves; auto-resume when first joins.
@@ -388,7 +415,7 @@ class PrayerBot(discord.Client):
         guild_id = str(member.guild.id)
         
         # 1. GREETING LOGIC
-        # User joined a channel
+        # User joined the channel the bot is in
         if after.channel is not None and (before.channel is None or before.channel.id != after.channel.id):
             vc = self.voice_connections.get(guild_id)
             if vc and vc.is_connected() and vc.channel.id == after.channel.id:
@@ -397,51 +424,18 @@ class PrayerBot(discord.Client):
                 is_playing_prayer = player and player.is_playing() and "tts_" not in (player.current_track.track_id if player.current_track else "")
                 
                 if not is_playing_prayer:
-                    # Find out how many minutes until next prayer
-                    scheduler = self.schedulers.get(guild_id)
-                    minutes_left = None
-                    if scheduler:
-                        import pytz
-                        from datetime import datetime, timedelta
-                        now = datetime.now(pytz.utc)
-                        schedules = get_weekly_schedule(self.db, guild_id)
-                        
-                        best_dt = None
-                        for s in schedules:
-                            if not s.enabled: continue
-                            days_ahead = (s.day_of_week - now.weekday()) % 7
-                            if days_ahead == 0 and s.time_utc <= now.time():
-                                days_ahead = 7
-                            prayer_dt = now.replace(hour=s.time_utc.hour, minute=s.time_utc.minute, second=0, microsecond=0) + timedelta(days=days_ahead)
-                            if best_dt is None or prayer_dt < best_dt:
-                                best_dt = prayer_dt
-                        
-                        if best_dt:
-                            delta = best_dt - now
-                            minutes_left = int(delta.total_seconds() / 60)
-                    
+                    minutes_left = self._get_next_prayer_minutes(guild_id)
                     # Requirement: Greet if before prayer starts. 
-                    # If minutes_left is small (e.g. < 11), we are in the pre-join window.
                     if minutes_left is not None and minutes_left <= 10 and minutes_left > 0:
                         greeting = f"Welcome {member.display_name}, thank you for coming, we will start the prayer in {minutes_left} minutes."
-                        await self._say_tts(guild_id, greeting)
+                        asyncio.create_task(self._say_tts(guild_id, greeting))
 
         # 2. PAUSE/RESUME LOGIC
         player = self.players.get(guild_id)
         if player is None:
             return
 
-        vc = self.voice_connections.get(guild_id)
-        
-        # Check listener count in the channel the bot is in (or should be in)
-        channel = vc.channel if (vc and vc.is_connected()) else None
-        if channel is None:
-            cfg = get_guild_config(self.db, guild_id)
-            if cfg and cfg.voice_channel_id:
-                guild = self.get_guild(int(guild_id))
-                if guild:
-                    channel = guild.get_channel(int(cfg.voice_channel_id))
-        
+        channel = self._get_listening_channel(guild_id)
         if channel is None:
             return
 
@@ -511,7 +505,13 @@ class PrayerBot(discord.Client):
             if player:
                 vol = await player.set_volume(vol)
                 return f"ok:volume:{vol}"
-            # Set global state even without player
+            
+            if guild_id:
+                scoped_state = GuildScopedState(self.db, guild_id)
+                scoped_state.stream_volume_percent = vol
+                return f"ok:volume_saved:{vol}"
+                
+            # Fallback to global state
             self.bot_state.stream_volume_percent = min(450, max(50, vol))
             return "ok:volume_saved"
 
@@ -525,60 +525,16 @@ class PrayerBot(discord.Client):
                 return "error:missing_track_id"
             if not guild_id:
                 return "error:missing_guild_id"
+            
+            prayer_type_str = payload.get("prayer_type", "prayer")
+            try:
+                prayer_type = PrayerType(prayer_type_str)
+            except ValueError:
+                # Fallback if it's an adhoc track not in enum
+                prayer_type = PrayerType.THREE_DAILY 
 
-            media_path = MEDIA_DIR / track_id
-            if not media_path.exists():
-                return "error:file_not_found"
-
-            # Ensure voice connected on-demand
-            vc = await self._ensure_voice_connected(guild_id)
-            if vc is None:
-                return "error:cannot_join_voice"
-
-            # Create or reuse player
-            player = self.players.get(guild_id)
-            if player is None:
-                guild_state = GuildScopedState(self.db, guild_id)
-                player = Player(
-                    voice_client=vc,
-                    provider=None,
-                    state=guild_state,
-                    loop=asyncio.get_running_loop(),
-                    source_factory=self._source_factory,
-                )
-                self.players[guild_id] = player
-            else:
-                # Rebind voice_client on reuse — the old one may be stale/disconnected
-                player.voice_client = vc
-
-            # Send text notification
-            prayer_type = payload.get("prayer_type", "prayer")
-            cfg = get_guild_config(self.db, guild_id)
-            if cfg and cfg.text_channel_id:
-                guild = self.get_guild(int(guild_id))
-                if guild:
-                    text_channel = guild.get_channel(int(cfg.text_channel_id))
-                    if text_channel:
-                        with contextlib.suppress(Exception):
-                            await text_channel.send(
-                                f"🕌 **{prayer_type.title()} Prayer** is now playing. "
-                                f"Join <#{cfg.voice_channel_id}> to listen."
-                            )
-
-            # Cancel any pending disconnect timer (new track resets the countdown)
-            self._cancel_disconnect_task(guild_id)
-
-            # Schedule disconnect 5 minutes after playback FINISHES
-            player.on_finish(self._make_schedule_disconnect(guild_id))
-
-            from provider.client import TrackResponse
-            track = TrackResponse(
-                track_id=track_id, title=prayer_type,
-                duration_seconds=0, local_path=str(media_path),
-                provider_used="local", playlist_position=0, ready=True,
-            )
-            await player.start(track)
-            return "ok:playing"
+            success = await self._start_prayer_playback(guild_id, prayer_type, track_id)
+            return "ok:playing" if success else "error:playback_failed"
 
         elif command == "disconnect":
             if not guild_id:

@@ -31,7 +31,8 @@ class PrayerScheduler:
         self.guild_id = guild_id
         self.timezone = pytz.utc
         self.on_pre_prayer: Callable[[str], Awaitable[None]] | None = None
-        self._pre_joined: set[str] = set()  # track which (day, prayer) we already pre-joined for
+        self._pre_joined: set[str] = set()  # track which (date, prayer) we already pre-joined for
+        self._played: set[str] = set() # track which (date, prayer) we already played
         self._task: asyncio.Task | None = None
         self._running = False
 
@@ -62,23 +63,29 @@ class PrayerScheduler:
         now = datetime.now(self.timezone)
         weekday = now.weekday()
         current_time = now.time().replace(second=0, microsecond=0)
+        today_str = now.date().isoformat()
 
         # Also check 10 minutes ahead for pre-join
-        pre_join_time = (now + timedelta(minutes=10)).time().replace(second=0, microsecond=0)
-        # Handle day wrap for pre-join check
-        pre_join_weekday = weekday
-        if (now + timedelta(minutes=10)).weekday() != weekday:
-            pre_join_weekday = (weekday + 1) % 7
+        pre_now = now + timedelta(minutes=10)
+        pre_join_time = pre_now.time().replace(second=0, microsecond=0)
+        pre_join_weekday = pre_now.weekday()
+        pre_date_str = pre_now.date().isoformat()
 
         schedules = get_weekly_schedule(self.db, self.guild_id)
+
+        # Cleanup old entries from sets periodically (at midnight)
+        if current_time == time(0, 0):
+            self._pre_joined = {k for k in self._pre_joined if k.startswith(today_str) or k.startswith(pre_date_str)}
+            self._played = {k for k in self._played if k.startswith(today_str)}
 
         for sched in schedules:
             if not sched.enabled:
                 continue
 
-            pre_key = f"{sched.day_of_week}:{sched.prayer_type.value}"
+            pre_key = f"{pre_date_str}:{sched.day_of_week}:{sched.prayer_type.value}"
+            play_key = f"{today_str}:{sched.day_of_week}:{sched.prayer_type.value}"
 
-            # Pre-join: 5 minutes before prayer
+            # Pre-join: 10 minutes before prayer
             if (self.on_pre_prayer
                     and sched.day_of_week == pre_join_weekday
                     and sched.time_utc == pre_join_time
@@ -86,7 +93,7 @@ class PrayerScheduler:
                 self._pre_joined.add(pre_key)
                 try:
                     await self.on_pre_prayer(self.guild_id)
-                    log.info("Pre-joined voice for %s in guild %s (5 min before)",
+                    log.info("Pre-joined voice for %s in guild %s (10 min before)",
                              sched.prayer_type.value, self.guild_id)
                 except Exception as exc:
                     log.exception("Pre-join failed: %s", exc)
@@ -94,7 +101,8 @@ class PrayerScheduler:
             # Exact match: play now
             if sched.day_of_week != weekday:
                 continue
-            if sched.time_utc == current_time:
+            if sched.time_utc == current_time and play_key not in self._played:
+                self._played.add(play_key)
                 filename = get_audio_filename(sched.prayer_type)
                 success = await self.play_prayer(
                     self.guild_id, sched.prayer_type, filename
@@ -104,5 +112,3 @@ class PrayerScheduler:
                     self.db, self.guild_id, sched.id, sched.prayer_type, success
                 )
                 log.info("Played %s for guild %s", sched.prayer_type, self.guild_id)
-                # Clear pre-join marker after playing
-                self._pre_joined.discard(pre_key)

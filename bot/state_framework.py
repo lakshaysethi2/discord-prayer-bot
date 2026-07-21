@@ -142,18 +142,20 @@ class GuildScopedState(BotState):
     keys to the guild_id to avoid cross-server state clobbering.
     """
 
-    def __init__(self, db: Database, guild_id: str = "") -> None:
+    def __init__(self, db: Database, guild_id: str) -> None:
         super().__init__(db)
+        if not guild_id:
+            raise ValueError("guild_id is required for GuildScopedState")
         self.guild_id = guild_id
 
     def get(self, key: str, default: str | None = None) -> str | None:
         if key not in BOT_STATE_KEYS:
             raise KeyError(f"unknown bot_state key {key!r}")
-        scoped_key = f"{key}:{self.guild_id}" if self.guild_id else key
+        scoped_key = f"{key}:{self.guild_id}"
         return self.db.get_state(scoped_key, default)
 
     def set(self, key: str, value: str | int | float | bool | None) -> None:
         if key not in BOT_STATE_KEYS:
             raise KeyError(f"unknown bot_state key {key!r}")
-        scoped_key = f"{key}:{self.guild_id}" if self.guild_id else key
+        scoped_key = f"{key}:{self.guild_id}"
         self.db.set_state(scoped_key, value)

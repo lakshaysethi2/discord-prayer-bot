@@ -342,7 +342,8 @@ async def servers_page(
         cfg = get_guild_config(db, gid)
         channels = get_guild_channels(db, gid)
         voice_channels = [c for c in channels if c.channel_type == "voice"]
-        text_channels = [c for c in channels if c.channel_type == "text"]
+        # Allow both text channels and voice channels (for built-in text chat)
+        text_channels = [c for c in channels if c.channel_type in ("text", "voice")]
         servers.append({
             "guild_id": gid,
             "guild_name": r["guild_name"] or gid,
@@ -352,8 +353,14 @@ async def servers_page(
             "voice_channels": voice_channels,
             "text_channels": text_channels,
         })
-    # Current volume from bot_state
-    current_volume = db.get_state_int("stream_volume_percent", 100)
+    # Current volume from bot_state (read from first guild if possible, else global)
+    current_volume = 100
+    if servers:
+        first_gid = servers[0]["guild_id"]
+        current_volume = db.get_state_int(f"stream_volume_percent:{first_gid}", 
+                                         db.get_state_int("stream_volume_percent", 100))
+    else:
+        current_volume = db.get_state_int("stream_volume_percent", 100)
     return templates.TemplateResponse(
         request,
         "servers.html",
