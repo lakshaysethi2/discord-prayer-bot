@@ -154,6 +154,19 @@ SCHEMA: tuple[str, ...] = (
         FOREIGN KEY(schedule_id) REFERENCES prayer_schedules(id) ON DELETE CASCADE
     )
     """,
+    # ---- voice_session_logs (who joined when) ------------------------------
+    """
+    CREATE TABLE IF NOT EXISTS voice_session_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        guild_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        username TEXT NOT NULL,
+        channel_id TEXT NOT NULL,
+        joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        left_at TIMESTAMP,
+        duration_seconds INTEGER
+    )
+    """,
 )
 
 

@@ -66,12 +66,16 @@ class PrayerScheduler:
         today_str = now.date().isoformat()
 
         # Cleanup old entries from sets (anything not from today or future pre-join window)
-        # This ensures cleanup happens even if midnight tick is missed.
         self._pre_joined = {k for k in self._pre_joined if k.split(":")[0] >= today_str}
         self._played = {k for k in self._played if k.startswith(today_str)}
 
         # Also check 10 minutes ahead for pre-join
         pre_now = now + timedelta(minutes=10)
+        pre_join_time = pre_now.time().replace(second=0, microsecond=0)
+        pre_join_weekday = pre_now.weekday()
+        pre_date_str = pre_now.date().isoformat()
+
+        schedules = get_weekly_schedule(self.db, self.guild_id)
 
         for sched in schedules:
             if not sched.enabled:

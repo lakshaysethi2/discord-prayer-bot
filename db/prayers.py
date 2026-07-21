@@ -78,12 +78,42 @@ def delete_schedule(db: Database, schedule_id: int) -> None:
 
 
 def log_prayer_played(
-    db: Database, guild_id: str, schedule_id: int, prayer_type: PrayerType, success: bool
+    db: Database, guild_id: str, schedule_id: int | None, prayer_type: PrayerType, success: bool
 ) -> None:
     db.execute("""
         INSERT INTO prayer_logs (guild_id, schedule_id, prayer_type, success)
         VALUES (?, ?, ?, ?)
     """, (guild_id, schedule_id, prayer_type.value, int(success)))
+
+
+def log_voice_join(db: Database, guild_id: str, user_id: str, username: str, channel_id: str) -> None:
+    db.execute("""
+        INSERT INTO voice_session_logs (guild_id, user_id, username, channel_id, joined_at)
+        VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+    """, (guild_id, user_id, username, channel_id))
+
+
+def log_voice_leave(db: Database, guild_id: str, user_id: str, channel_id: str) -> None:
+    # Find the most recent open session for this user in this channel
+    row = db.fetchone("""
+        SELECT id, joined_at FROM voice_session_logs 
+        WHERE guild_id=? AND user_id=? AND channel_id=? AND left_at IS NULL
+        ORDER BY joined_at DESC LIMIT 1
+    """, (guild_id, user_id, channel_id))
+    
+    if row:
+        db.execute("""
+            UPDATE voice_session_logs 
+            SET left_at = CURRENT_TIMESTAMP,
+                duration_seconds = CAST((JulianDay(CURRENT_TIMESTAMP) - JulianDay(joined_at)) * 86400 AS INTEGER)
+            WHERE id = ?
+        """, (row["id"],))
+
+
+def cleanup_old_logs(db: Database) -> None:
+    """Delete logs older than 30 days."""
+    db.execute("DELETE FROM prayer_logs WHERE played_at < date('now', '-30 days')")
+    db.execute("DELETE FROM voice_session_logs WHERE joined_at < date('now', '-30 days')")
 
 
 def get_audio_filename(prayer_type: PrayerType) -> str:
