@@ -31,11 +31,15 @@ from db import guilds as guilds_db
 from db.models import PrayerType
 from db.prayers import get_guild_config, get_audio_filename, log_prayer_played
 
+import edge_tts
+
 log = logging.getLogger(__name__)
 
 TOKEN = os.environ.get("DISCORD_BOT_TOKEN", "")
 DB_PATH = os.environ.get("DATABASE_PATH", "./data/prayer_bot.db")
 MEDIA_DIR = Path("media/prayers")
+TTS_DIR = Path("data/tts")
+TTS_DIR.mkdir(parents=True, exist_ok=True)
 
 # ---------------------------------------------------------------------------
 # Bot class
@@ -230,14 +234,69 @@ class PrayerBot(discord.Client):
     def _make_schedule_disconnect(self, guild_id: str):
         """Return a callback that schedules disconnect 5 min after playback finishes."""
         async def _on_finish(player, track):
+            # 1. Say "Thank you all for joining..." via TTS
+            try:
+                vc = self.voice_connections.get(guild_id)
+                if vc and vc.is_connected():
+                    await self._say_tts(guild_id, "Thank you all for joining, god bless you.")
+            except Exception as exc:
+                log.exception("Post-prayer TTS failed: %s", exc)
+
+            # 2. Schedule the actual disconnect
             # Cancel any existing disconnect task for safety, then start a new one
             self._cancel_disconnect_task(guild_id)
             task = asyncio.create_task(self._disconnect_voice_after_delay(guild_id, 300))
             self._disconnect_tasks[guild_id] = task
         return _on_finish
 
+    async def _say_tts(self, guild_id: str, text: str) -> None:
+        """Generate and play TTS audio in the guild's voice channel."""
+        vc = self.voice_connections.get(guild_id)
+        if not vc or not vc.is_connected():
+            return
+
+        # Ensure we have a player to manage playback (stops overlapping audio)
+        player = self.players.get(guild_id)
+        if player is None:
+            guild_state = GuildScopedState(self.db, guild_id)
+            player = Player(
+                voice_client=vc,
+                provider=None,
+                state=guild_state,
+                loop=asyncio.get_running_loop(),
+                source_factory=self._source_factory,
+                persist_pause_state=False # Don't clobber real prayer pause state for TTS
+            )
+            self.players[guild_id] = player
+        else:
+            player.voice_client = vc
+
+        # Stop whatever is playing if we are force-greeting or something? 
+        # Actually, requirements say only greet BEFORE prayer or AFTER.
+        # So it's safe to use the player.
+        
+        filepath = TTS_DIR / f"tts_{hash(text)}.mp3"
+        if not filepath.exists():
+            communicate = edge_tts.Communicate(text, "en-US-GuyNeural")
+            await communicate.save(str(filepath))
+
+        from provider.client import TrackResponse
+        track = TrackResponse(
+            track_id=f"tts_{hash(text)}",
+            title="Notification",
+            duration_seconds=0,
+            local_path=str(filepath),
+            provider_used="local",
+            playlist_position=0,
+            ready=True,
+        )
+        # Use start but don't persist state if it's a notification
+        await player.start(track)
+        # Wait for it to finish or just let it play? 
+        # For simplicity, we just let it play. If a prayer starts immediately after, player.start will override.
+
     async def _on_pre_prayer(self, guild_id: str) -> None:
-        """Called 5 min before scheduled prayer — join voice early."""
+        """Called 10 min before scheduled prayer — join voice early."""
         self._cancel_disconnect_task(guild_id)
         await self._ensure_voice_connected(guild_id)
 
@@ -321,11 +380,53 @@ class PrayerBot(discord.Client):
     # ------------------------------------------------------------------ voice state tracking
 
     async def on_voice_state_update(self, member, before, after) -> None:
-        """Auto-pause when last user leaves; auto-resume when first joins."""
+        """Auto-pause when last user leaves; auto-resume when first joins.
+        Also handles greeting new joins before prayer starts."""
         if member.bot:
             return
 
         guild_id = str(member.guild.id)
+        
+        # 1. GREETING LOGIC
+        # User joined a channel
+        if after.channel is not None and (before.channel is None or before.channel.id != after.channel.id):
+            vc = self.voice_connections.get(guild_id)
+            if vc and vc.is_connected() and vc.channel.id == after.channel.id:
+                player = self.players.get(guild_id)
+                # Only greet if NOT playing a prayer
+                is_playing_prayer = player and player.is_playing() and "tts_" not in (player.current_track.track_id if player.current_track else "")
+                
+                if not is_playing_prayer:
+                    # Find out how many minutes until next prayer
+                    scheduler = self.schedulers.get(guild_id)
+                    minutes_left = None
+                    if scheduler:
+                        import pytz
+                        from datetime import datetime, timedelta
+                        now = datetime.now(pytz.utc)
+                        schedules = get_weekly_schedule(self.db, guild_id)
+                        
+                        best_dt = None
+                        for s in schedules:
+                            if not s.enabled: continue
+                            days_ahead = (s.day_of_week - now.weekday()) % 7
+                            if days_ahead == 0 and s.time_utc <= now.time():
+                                days_ahead = 7
+                            prayer_dt = now.replace(hour=s.time_utc.hour, minute=s.time_utc.minute, second=0, microsecond=0) + timedelta(days=days_ahead)
+                            if best_dt is None or prayer_dt < best_dt:
+                                best_dt = prayer_dt
+                        
+                        if best_dt:
+                            delta = best_dt - now
+                            minutes_left = int(delta.total_seconds() / 60)
+                    
+                    # Requirement: Greet if before prayer starts. 
+                    # If minutes_left is small (e.g. < 11), we are in the pre-join window.
+                    if minutes_left is not None and minutes_left <= 10 and minutes_left > 0:
+                        greeting = f"Welcome {member.display_name}, thank you for coming, we will start the prayer in {minutes_left} minutes."
+                        await self._say_tts(guild_id, greeting)
+
+        # 2. PAUSE/RESUME LOGIC
         player = self.players.get(guild_id)
         if player is None:
             return
