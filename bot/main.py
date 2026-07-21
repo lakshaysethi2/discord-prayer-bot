@@ -546,8 +546,8 @@ class PrayerBot(discord.Client):
 
     # ------------------------------------------------------------------ voice state tracking
 
-    def _get_next_prayer_minutes(self, guild_id: str) -> int | None:
-        """Calculate minutes until the next scheduled prayer."""
+    def _get_next_prayer_info(self, guild_id: str) -> dict | None:
+        """Get detailed info about the next scheduled prayer."""
         schedules = get_weekly_schedule(self.db, guild_id)
         if not schedules:
             return None
@@ -555,21 +555,43 @@ class PrayerBot(discord.Client):
         import pytz
         from datetime import datetime, timedelta
         now = datetime.now(pytz.UTC)
+        current_weekday = now.weekday()
         
         best_dt = None
+        best_sched = None
+        
         for s in schedules:
-            if not s.enabled: continue
-            days_ahead = (s.day_of_week - now.weekday()) % 7
+            if not s.enabled:
+                continue
+            
+            days_ahead = (s.day_of_week - current_weekday) % 7
             if days_ahead == 0 and s.time_utc <= now.time():
                 days_ahead = 7
-            prayer_dt = now.replace(hour=s.time_utc.hour, minute=s.time_utc.minute, second=0, microsecond=0) + timedelta(days=days_ahead)
+                
+            prayer_dt = now.replace(
+                hour=s.time_utc.hour, 
+                minute=s.time_utc.minute, 
+                second=0, 
+                microsecond=0
+            ) + timedelta(days=days_ahead)
+            
             if best_dt is None or prayer_dt < best_dt:
                 best_dt = prayer_dt
+                best_sched = s
         
-        if best_dt:
+        if best_dt and best_sched:
             delta = best_dt - now
-            return int(delta.total_seconds() / 60)
+            return {
+                "schedule": best_sched,
+                "datetime": best_dt,
+                "minutes_left": int(delta.total_seconds() / 60)
+            }
         return None
+
+    def _get_next_prayer_minutes(self, guild_id: str) -> int | None:
+        """Calculate minutes until the next scheduled prayer."""
+        info = self._get_next_prayer_info(guild_id)
+        return info["minutes_left"] if info else None
 
     async def on_voice_state_update(self, member, before, after) -> None:
         """Auto-pause when last user leaves; auto-resume when first joins.
@@ -990,6 +1012,83 @@ class PrayerBot(discord.Client):
                 await interaction.followup.send("⚠️ Not currently connected to a voice channel.")
             else:
                 await interaction.followup.send(f"❌ Failed to disconnect: {result}")
+
+        @self.tree.command(name="next", description="Find out when the next prayer is scheduled")
+        @discord.app_commands.guild_only()
+        async def next_prayer(interaction: discord.Interaction):
+            guild_id = str(interaction.guild_id)
+            info = self._get_next_prayer_info(guild_id)
+            
+            if not info:
+                await interaction.response.send_message("📅 No prayers are currently scheduled for this server.", ephemeral=True)
+                return
+            
+            sched = info["schedule"]
+            dt = info["datetime"]
+            mins = info["minutes_left"]
+            
+            # Get guild timezone for local display
+            cfg = get_guild_config(self.db, guild_id)
+            tz_name = cfg.timezone_name if cfg else "UTC"
+            
+            # Format time
+            local_dt = dt.astimezone(pytz.timezone(tz_name))
+            time_str = local_dt.strftime("%I:%M %p")
+            day_str = local_dt.strftime("%A")
+            
+            # Formatting countdown
+            hours, remainder = divmod(mins, 60)
+            if hours > 0:
+                countdown = f"{hours}h {remainder}m"
+            else:
+                countdown = f"{remainder}m"
+                
+            tradition = sched.prayer_type.value.title()
+            
+            embed = discord.Embed(
+                title=f"🕌 Next Prayer: {tradition}",
+                description=f"The next recitation will begin in **{countdown}**.",
+                color=discord.Color.indigo()
+            )
+            embed.add_field(name="Time", value=f"**{time_str}** ({day_str})", inline=True)
+            embed.add_field(name="Timezone", value=tz_name, inline=True)
+            embed.set_footer(text="Join the voice channel 10 minutes early for the welcome greeting!")
+            
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+
+        @self.tree.command(name="help", description="Show all available commands for the Prayer Bot")
+        async def help_command(interaction: discord.Interaction):
+            embed = discord.Embed(
+                title="🕌 Prayer Bot Help",
+                description="I play scheduled and adhoc prayer recitations in voice channels.",
+                color=discord.Color.blue()
+            )
+            
+            embed.add_field(
+                name="📖 Public Commands",
+                value=(
+                    "`/next` - See when the next prayer is scheduled (Ephemeral)\n"
+                    "`/help` - Show this help message"
+                ),
+                inline=False
+            )
+            
+            embed.add_field(
+                name="🛡️ Admin Commands (Manage Server required)",
+                value=(
+                    "`/start [tradition]` - Trigger an immediate adhoc prayer\n"
+                    "`/exit` - Stop playback and make the bot leave voice"
+                ),
+                inline=False
+            )
+            
+            embed.add_field(
+                name="🌐 Dashboard",
+                value="Admins can configure schedules and settings at: https://prayer-bot-dnd.lak.nz",
+                inline=False
+            )
+            
+            await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 # ---------------------------------------------------------------------------
