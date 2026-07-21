@@ -227,24 +227,24 @@ class Player:
                 self.state.is_paused = True
 
     async def resume(self) -> None:
-        """Resume playback of the current track at the saved position.
-
-        Re-fetches the track via the provider in case the cache evicted it.
-        No-op (with a log line) if the provider says the track isn't ready —
-        the caller can retry, or the empty-channel logic will try again next
-        time someone joins.
-        """
+        """Resume playback of the current track at the saved position."""
         async with self._lock:
             track_id = self.state.current_track_id
             if not track_id:
-                # Nothing to resume — caller should call `start_current()` instead.
                 return
             resume_at = float(self.state.playback_position_seconds)
-            # Even if the cache still has it, /tracks/{id} guarantees it.
-            track = await self.provider.get_by_id(track_id)
-            if not track.ready or not track.local_path:
-                log.warning("resume: track %s not ready", track_id)
+            
+            # If we have the track in memory (common for prayer bot), use it
+            track = self.current_track
+            
+            # If not in memory and we have a provider, fetch it
+            if (track is None or track.track_id != track_id) and self.provider:
+                track = await self.provider.get_by_id(track_id)
+            
+            if track is None or not track.ready or not track.local_path:
+                log.warning("resume: track %s not ready or no provider available", track_id)
                 return
+                
             await self._start_locked(track, seek_seconds=resume_at)
             if self.persist_pause_state:
                 self.state.is_paused = False

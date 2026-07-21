@@ -52,7 +52,11 @@ class BotState:
 
     @property
     def playback_position_seconds(self) -> int:
-        return self.db.get_state_int(BotStateKey.PLAYBACK_POSITION_SECONDS, 0)
+        v = self.get(BotStateKey.PLAYBACK_POSITION_SECONDS, "0")
+        try:
+            return int(v) if v else 0
+        except (TypeError, ValueError):
+            return 0
 
     @playback_position_seconds.setter
     def playback_position_seconds(self, value: int) -> None:
@@ -60,7 +64,10 @@ class BotState:
 
     @property
     def is_paused(self) -> bool:
-        return self.db.get_state_bool(BotStateKey.IS_PAUSED, False)
+        v = self.get(BotStateKey.IS_PAUSED, "False")
+        if v is None:
+            return False
+        return str(v).lower() in ("1", "true", "yes", "on")
 
     @is_paused.setter
     def is_paused(self, value: bool) -> None:
@@ -82,7 +89,11 @@ class BotState:
 
     @property
     def playlist_position(self) -> int:
-        return self.db.get_state_int(BotStateKey.PLAYLIST_POSITION, 0)
+        v = self.get(BotStateKey.PLAYLIST_POSITION, "0")
+        try:
+            return int(v) if v else 0
+        except (TypeError, ValueError):
+            return 0
 
     @playlist_position.setter
     def playlist_position(self, value: int) -> None:
@@ -91,7 +102,11 @@ class BotState:
     @property
     def stream_volume_percent(self) -> int:
         """Persistent global FFmpeg gain, constrained to the admin UI range."""
-        value = self.db.get_state_int(BotStateKey.STREAM_VOLUME_PERCENT, 100)
+        v = self.get(BotStateKey.STREAM_VOLUME_PERCENT, "100")
+        try:
+            value = int(v) if v else 100
+        except (TypeError, ValueError):
+            value = 100
         return min(450, max(50, value))
 
     @stream_volume_percent.setter
