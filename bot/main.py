@@ -65,6 +65,7 @@ class PrayerBot(discord.Client):
         self._running = False
         self.tree = discord.app_commands.CommandTree(self)
         self._tts_playing: set[str] = set() # guild_id -> is_tts_active
+        self._status_task: asyncio.Task | None = None
 
     # ------------------------------------------------------------------ lifecycle
 
@@ -76,6 +77,9 @@ class PrayerBot(discord.Client):
             # await self.tree.sync(guild=discord.Object(id=YOUR_GUILD_ID))
             await self.tree.sync()
             log.info("Slash commands synced globally")
+            
+            # Start the voice status update loop
+            self._status_task = asyncio.create_task(self._voice_status_loop())
         except Exception as exc:
             log.exception("Failed to sync slash commands in setup_hook: %s", exc)
 
@@ -616,6 +620,8 @@ class PrayerBot(discord.Client):
         self._running = False
         if self._command_task:
             self._command_task.cancel()
+        if self._status_task:
+            self._status_task.cancel()
         for scheduler in self.schedulers.values():
             await scheduler.stop()
         for vc in self.voice_connections.values():
@@ -623,6 +629,57 @@ class PrayerBot(discord.Client):
                 await vc.disconnect()
         self.db.close()
         await super().close()
+
+    # ------------------------------------------------------------------ status loop
+
+    async def _voice_status_loop(self) -> None:
+        """Background loop to update voice channel status every 30 minutes."""
+        # Wait until ready so we have guild information
+        await self.wait_until_ready()
+        
+        while self._running:
+            try:
+                await self._update_all_voice_statuses()
+            except Exception:
+                log.exception("Error in voice status loop")
+            
+            # Sleep for 30 minutes (1800 seconds)
+            await asyncio.sleep(1800)
+
+    async def _update_all_voice_statuses(self) -> None:
+        """Iterate over all enabled guilds and update their voice channel status."""
+        for guild in self.guilds:
+            guild_id = str(guild.id)
+            cfg = get_guild_config(self.db, guild_id)
+            
+            if not cfg or not cfg.enabled or not cfg.voice_channel_id:
+                continue
+                
+            voice_channel = guild.get_channel(int(cfg.voice_channel_id))
+            if not isinstance(voice_channel, discord.VoiceChannel):
+                continue
+                
+            minutes_left = self._get_next_prayer_minutes(guild_id)
+            if minutes_left is None:
+                status = "No prayers scheduled"
+            elif minutes_left <= 0:
+                status = "Prayer in progress"
+            else:
+                hours, mins = divmod(minutes_left, 60)
+                if hours > 0:
+                    status = f"Next prayer in ~{hours}h {mins}m"
+                else:
+                    status = f"Next prayer in ~{mins}m"
+            
+            try:
+                # Setting voice channel status requires specific permissions
+                # and is currently done via edit(status=...)
+                await voice_channel.edit(status=status)
+                log.info("Updated status for guild %s: %s", guild_id, status)
+            except discord.Forbidden:
+                log.warning("Missing permissions to set voice status in guild %s", guild_id)
+            except Exception as exc:
+                log.debug("Failed to set voice status in guild %s: %s", guild_id, exc)
 
     # ------------------------------------------------------------------ slash commands
 
