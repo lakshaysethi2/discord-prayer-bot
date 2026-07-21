@@ -35,6 +35,55 @@ router = APIRouter()
 templates = Jinja2Templates(directory="dashboard/templates")
 
 
+def get_db():
+    db = Database()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+@router.get("/health")
+async def health_check(db: Database = Depends(get_db)):
+    """Health check for Docker/Kubernetes."""
+    try:
+        # Check DB connectivity
+        db.fetchone("SELECT 1")
+        return JSONResponse({"status": "healthy", "database": "connected"})
+    except Exception as exc:
+        return JSONResponse(
+            {"status": "unhealthy", "database": "disconnected", "error": str(exc)},
+            status_code=500
+        )
+
+
+@router.get("/history/{guild_id}", response_class=HTMLResponse)
+async def prayer_history(
+    request: Request,
+    guild_id: str,
+    db: Database = Depends(get_db),
+):
+    require_auth(request)
+    cfg = get_guild_config(db, guild_id)
+    
+    # Get recent logs
+    rows = db.fetchall(
+        "SELECT * FROM prayer_logs WHERE guild_id=? ORDER BY played_at DESC LIMIT 50",
+        (guild_id,)
+    )
+    
+    return templates.TemplateResponse(
+        request,
+        "history.html",
+        {
+            "request": request,
+            "guild_id": guild_id,
+            "guild_name": cfg.guild_name if cfg else guild_id,
+            "logs": rows,
+        },
+    )
+
+
 # ------------------------------------------------------------------ root
 @router.get("/", response_class=HTMLResponse)
 async def root(request: Request):
@@ -79,16 +128,6 @@ async def login(request: Request):
     )
     return response
 
-
-def get_db():
-    db = Database()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
-# ------------------------------------------------------------------ helpers
 
 def _format_time_local(t_utc: time, offset_hours: float) -> str:
     """Convert UTC `time` to local time string using per-guild offset."""
@@ -419,6 +458,7 @@ async def servers_page(
             "enabled": cfg.enabled if cfg else False,
             "voice_channel_id": cfg.voice_channel_id if cfg else None,
             "text_channel_id": cfg.text_channel_id if cfg else None,
+            "logging_channel_id": cfg.logging_channel_id if cfg else None,
             "tts_voice": cfg.tts_voice if cfg else "en-US-GuyNeural",
             "voice_channels": voice_channels,
             "text_channels": text_channels,
@@ -441,6 +481,7 @@ async def servers_update(
     enabled: str = Form("off"),
     voice_channel_id: str = Form(""),
     text_channel_id: str = Form(""),
+    logging_channel_id: str = Form(""),
     tts_voice: str = Form("en-US-GuyNeural"),
     db: Database = Depends(get_db),
 ):
@@ -457,6 +498,7 @@ async def servers_update(
         enabled=wants_enabled,
         voice_channel_id=voice_channel_id or None,
         text_channel_id=text_channel_id or None,
+        logging_channel_id=logging_channel_id or None,
         timezone_offset_hours=cfg.timezone_offset_hours if cfg else 0.0,
         tts_voice=tts_voice,
     )
