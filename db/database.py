@@ -96,7 +96,6 @@ class Database:
                 self._ensure_column(cur, "guild_configs", "timezone_offset_hours", "REAL DEFAULT 0.0")
                 # Backfill: add tts_voice to guild_configs if missing
                 self._ensure_column(cur, "guild_configs", "tts_voice", "TEXT DEFAULT 'en-US-GuyNeural'")
-                self._ensure_column(cur, "guild_configs", "original_voice_name", "TEXT")
                 # Backfill: add guild_id to watch_sessions if missing
                 self._ensure_column(cur, "watch_sessions", "guild_id", "TEXT NOT NULL DEFAULT ''")
                 self._ensure_column(cur, "guild_channels", "parent_id", "TEXT")
