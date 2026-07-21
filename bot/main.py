@@ -71,15 +71,15 @@ class PrayerBot(discord.Client):
 
     async def setup_hook(self) -> None:
         """Called by discord.py when the bot is starting up."""
+        # Start the voice status update loop early (it waits for ready internally)
+        self._status_task = asyncio.create_task(self._voice_status_loop())
+
         try:
             self._setup_slash_commands()
             # This is for global sync. For instant testing, you can use:
             # await self.tree.sync(guild=discord.Object(id=YOUR_GUILD_ID))
             await self.tree.sync()
             log.info("Slash commands synced globally")
-            
-            # Start the voice status update loop
-            self._status_task = asyncio.create_task(self._voice_status_loop())
         except Exception as exc:
             log.exception("Failed to sync slash commands in setup_hook: %s", exc)
 
@@ -637,7 +637,7 @@ class PrayerBot(discord.Client):
         # Wait until ready so we have guild information
         await self.wait_until_ready()
         
-        while self._running:
+        while not self.is_closed():
             try:
                 await self._update_all_voice_statuses()
             except Exception:
@@ -650,36 +650,43 @@ class PrayerBot(discord.Client):
         """Iterate over all enabled guilds and update their voice channel status."""
         for guild in self.guilds:
             guild_id = str(guild.id)
-            cfg = get_guild_config(self.db, guild_id)
-            
-            if not cfg or not cfg.enabled or not cfg.voice_channel_id:
-                continue
-                
-            voice_channel = guild.get_channel(int(cfg.voice_channel_id))
-            if not isinstance(voice_channel, discord.VoiceChannel):
-                continue
-                
-            minutes_left = self._get_next_prayer_minutes(guild_id)
-            if minutes_left is None:
-                status = "No prayers scheduled"
-            elif minutes_left <= 0:
-                status = "Prayer in progress"
-            else:
-                hours, mins = divmod(minutes_left, 60)
-                if hours > 0:
-                    status = f"Next prayer in ~{hours}h {mins}m"
-                else:
-                    status = f"Next prayer in ~{mins}m"
-            
             try:
-                # Setting voice channel status requires specific permissions
-                # and is currently done via edit(status=...)
+                cfg = get_guild_config(self.db, guild_id)
+                
+                if not cfg or not cfg.enabled or not cfg.voice_channel_id:
+                    continue
+                    
+                voice_channel = guild.get_channel(int(cfg.voice_channel_id))
+                if not isinstance(voice_channel, discord.VoiceChannel):
+                    continue
+                
+                # Check if prayer is actually in progress (playing audio)
+                player = self.players.get(guild_id)
+                if player and player.is_playing() and not (guild_id in self._tts_playing):
+                    status = "Prayer in progress"
+                else:
+                    minutes_left = self._get_next_prayer_minutes(guild_id)
+                    if minutes_left is None:
+                        status = "No prayers scheduled"
+                    elif minutes_left <= 0:
+                        status = "Prayer starting soon"
+                    else:
+                        days, remainder = divmod(minutes_left, 1440)
+                        hours, mins = divmod(remainder, 60)
+                        
+                        if days > 0:
+                            status = f"Next prayer in ~{days}d {hours}h"
+                        elif hours > 0:
+                            status = f"Next prayer in ~{hours}h {mins}m"
+                        else:
+                            status = f"Next prayer in ~{mins}m"
+                
                 await voice_channel.edit(status=status)
                 log.info("Updated status for guild %s: %s", guild_id, status)
             except discord.Forbidden:
                 log.warning("Missing permissions to set voice status in guild %s", guild_id)
             except Exception as exc:
-                log.debug("Failed to set voice status in guild %s: %s", guild_id, exc)
+                log.warning("Failed to set voice status in guild %s: %s", guild_id, exc)
 
     # ------------------------------------------------------------------ slash commands
 
