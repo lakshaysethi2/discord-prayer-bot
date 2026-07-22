@@ -532,6 +532,8 @@ async def servers_page(
             "text_channel_id": cfg.text_channel_id if cfg else None,
             "logging_channel_id": cfg.logging_channel_id if cfg else None,
             "tts_voice": cfg.tts_voice if cfg else "en-US-GuyNeural",
+            "pre_join_minutes": cfg.pre_join_minutes if cfg else 10,
+            "post_stay_minutes": cfg.post_stay_minutes if cfg else 5,
             "voice_channels": voice_channels,
             "text_channels": text_channels,
         })
@@ -555,6 +557,8 @@ async def servers_update(
     text_channel_id: str = Form(""),
     logging_channel_id: str = Form(""),
     tts_voice: str = Form("en-US-GuyNeural"),
+    pre_join_minutes: int = Form(10),
+    post_stay_minutes: int = Form(5),
     db: Database = Depends(get_db),
 ):
     require_auth(request)
@@ -572,7 +576,10 @@ async def servers_update(
         text_channel_id=text_channel_id or None,
         logging_channel_id=logging_channel_id or None,
         timezone_offset_hours=cfg.timezone_offset_hours if cfg else 0.0,
+        timezone_name=cfg.timezone_name if cfg else "UTC",
         tts_voice=tts_voice,
+        pre_join_minutes=pre_join_minutes,
+        post_stay_minutes=post_stay_minutes,
     )
     # Enqueue live apply (no restart) — task 3 / 4
     from dashboard.commands import enqueue

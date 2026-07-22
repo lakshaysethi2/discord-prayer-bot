@@ -22,7 +22,6 @@ from pathlib import Path
 
 import discord
 import edge_tts
-import pytz
 
 from bot.apply_server import apply_server_config as live_apply
 from bot.player_framework import Player, default_ffmpeg_source
@@ -162,7 +161,7 @@ class PrayerBot(discord.Client):
 
     async def _setup_guild(self, guild_id: str) -> None:
         """Set up scheduler for one guild if enabled. Does NOT join voice — voice is
-        only connected when a prayer is about to be recited (10 min before)."""
+        only connected when a prayer is about to be recited (X min before)."""
         cfg = get_guild_config(self.db, guild_id)
         if cfg is None or not cfg.enabled:
             log.info("Guild %s not enabled — skipping setup", guild_id)
@@ -189,7 +188,7 @@ class PrayerBot(discord.Client):
             play_prayer=self._play_prayer_callback,
             guild_id=guild_id,
         )
-        # Wire up pre-join: 10 min before prayer, ensure voice is connected
+        # Wire up pre-join: X min before prayer, ensure voice is connected
         scheduler.on_pre_prayer = self._on_pre_prayer
         self.schedulers[guild_id] = scheduler
         await scheduler.start()
@@ -224,13 +223,8 @@ class PrayerBot(discord.Client):
             
         if existing and existing.is_connected():
             if existing.channel and str(existing.channel.id) == str(cfg.voice_channel_id):
-                # Update connection state in case it was stale in DB
-                scoped_state = GuildScopedState(self.db, guild_id)
-                scoped_state.is_connected = True
                 return existing
             await existing.move_to(voice_channel)
-            scoped_state = GuildScopedState(self.db, guild_id)
-            scoped_state.is_connected = True
             return existing
 
         try:
@@ -248,10 +242,6 @@ class PrayerBot(discord.Client):
                 
             self.voice_connections[guild_id] = vc
             log.info("Joined voice in guild %s for prayer", guild_id)
-            
-            # Persist connection state
-            scoped_state = GuildScopedState(self.db, guild_id)
-            scoped_state.is_connected = True
             
             # Greet people already in the room
             listeners = [m.display_name for m in voice_channel.members if not m.bot]
@@ -281,10 +271,6 @@ class PrayerBot(discord.Client):
                 await vc.disconnect()
                 log.info("Disconnected from voice in guild %s (idle timeout)", guild_id)
                 await self._log_to_channel(guild_id, "Disconnected from voice channel due to idle timeout.")
-                
-                # Persist connection state
-                scoped_state = GuildScopedState(self.db, guild_id)
-                scoped_state.is_connected = False
 
     def _cancel_disconnect_task(self, guild_id: str) -> None:
         """Cancel any pending disconnect timer for the guild."""
@@ -294,7 +280,7 @@ class PrayerBot(discord.Client):
             log.debug("Cancelled pending disconnect task for guild %s", guild_id)
 
     async def _make_schedule_disconnect(self, guild_id: str):
-        """Return a callback that schedules disconnect 5 min after playback finishes."""
+        """Return a callback that schedules disconnect X min after playback finishes."""
         async def _on_finish(player, track):
             # Cleanup notification message
             await self._cleanup_notification(guild_id, player)
@@ -312,16 +298,24 @@ class PrayerBot(discord.Client):
                             names_text = f"{listeners[0]} and {listeners[1]}"
                         else:
                             names_text = f"{', '.join(listeners[:-1])}, and {listeners[-1]}"
-                        await self._say_tts(guild_id, f"Thank you {names_text} for joining, god bless you.")
+                        
+                        # Requirement 11: 5 seconds after finishing, say the message.
+                        await asyncio.sleep(5)
+                        await self._say_tts(guild_id, f"Thank you {names_text} for joining the prayer session, God bless you.")
                     else:
-                        await self._say_tts(guild_id, "Thank you all for joining, god bless you.")
+                        await asyncio.sleep(5)
+                        await self._say_tts(guild_id, "Thank you all for joining the prayer session, God bless you.")
             except Exception as exc:
                 log.exception("Post-prayer TTS failed: %s", exc)
 
             # 2. Schedule the actual disconnect
+            # Requirement 12: configurable stay time
+            cfg = get_guild_config(self.db, guild_id)
+            stay_mins = cfg.post_stay_minutes if cfg else 5
+            
             # Cancel any existing disconnect task for safety, then start a new one
             self._cancel_disconnect_task(guild_id)
-            task = asyncio.create_task(self._disconnect_voice_after_delay(guild_id, 300))
+            task = asyncio.create_task(self._disconnect_voice_after_delay(guild_id, stay_mins * 60))
             self._disconnect_tasks[guild_id] = task
             
             # 3. Update status after prayer ends
@@ -341,38 +335,26 @@ class PrayerBot(discord.Client):
         queue = self._tts_queues[guild_id]
         while not self.is_closed():
             try:
-                # Wait for next TTS item
                 item = await queue.get()
                 text, done_event = item if isinstance(item, tuple) else (item, None)
-                
-                log.debug("TTS worker in guild %s processing: %s", guild_id, text)
                 try:
-                    # Wait for individual TTS playback to complete (with safety timeout)
-                    await asyncio.wait_for(self._process_tts(guild_id, text), timeout=60.0)
-                except asyncio.TimeoutError:
-                    log.warning("TTS playback timed out in guild %s", guild_id)
-                except Exception as exc:
-                    log.exception("Error processing TTS in guild %s: %s", guild_id, exc)
+                    await self._process_tts(guild_id, text)
                 finally:
                     if done_event:
                         done_event.set()
                     queue.task_done()
             except Exception:
-                log.exception("Fatal error in TTS worker loop for guild %s", guild_id)
-                await asyncio.sleep(1) # Prevent tight error loop
+                log.exception("TTS worker error in guild %s", guild_id)
 
     async def _process_tts(self, guild_id: str, text: str) -> None:
         """Generate and play a single TTS audio clip."""
         vc = self.voice_connections.get(guild_id)
         if not vc or not vc.is_connected():
-            log.debug("TTS skipped: Bot not connected to voice in guild %s", guild_id)
             return
 
         # Guard: Ensure we don't interrupt a real prayer
-        # Re-fetch player to ensure we have current state
         player = self.players.get(guild_id)
         if player and player.is_playing() and not (guild_id in self._tts_playing):
-            log.debug("TTS skipped: Real prayer currently playing in guild %s", guild_id)
             return
 
         # Get per-guild TTS voice config
@@ -382,23 +364,19 @@ class PrayerBot(discord.Client):
         cache_key = hashlib.sha1(f"{voice}:{text}".encode()).hexdigest()
         filepath = TTS_DIR / f"tts_{cache_key}.mp3"
         
-        try:
-            if not filepath.exists():
-                communicate = edge_tts.Communicate(text, voice)
-                await communicate.save(str(filepath))
-        except Exception as exc:
-            log.error("Failed to generate TTS for guild %s: %s", guild_id, exc)
-            return
+        if not filepath.exists():
+            communicate = edge_tts.Communicate(text, voice)
+            await communicate.save(str(filepath))
             
         # Re-check guard after network await
         player = self.players.get(guild_id)
         if player and player.is_playing() and not (guild_id in self._tts_playing):
             return
 
-        # TTS always plays at 100% volume
+        # TTS always plays at 100% volume to keep greetings consistent
+        # regardless of prayer volume boost.
         source = self._source_factory(str(filepath), 0, 100)
         
-        # Stop previous TTS if still playing
         if vc.is_playing():
             vc.stop()
             await asyncio.sleep(0.5) # Give FFmpeg a moment to clean up
@@ -408,7 +386,7 @@ class PrayerBot(discord.Client):
 
         def after_tts(exc):
             if exc:
-                log.warning("TTS playback error in guild %s: %s", guild_id, exc)
+                log.warning("TTS error in guild %s: %s", guild_id, exc)
             self._tts_playing.discard(guild_id)
             if not loop.is_closed():
                 loop.call_soon_threadsafe(playback_done.set)
@@ -424,7 +402,7 @@ class PrayerBot(discord.Client):
             self._tts_playing.discard(guild_id)
             playback_done.set()
         
-        log.debug("Finished process_tts in guild %s", guild_id)
+        log.debug("Finished playing TTS in guild %s: %s", guild_id, text)
 
     async def _log_to_channel(self, guild_id: str, message: str) -> None:
         """Send a log message to the guild's configured logging channel."""
@@ -442,11 +420,11 @@ class PrayerBot(discord.Client):
                 await channel.send(f"📋 **Log:** {message}")
 
     async def _on_pre_prayer(self, guild_id: str) -> None:
-        """Called 10 min before scheduled prayer — join voice early."""
+        """Called X min before scheduled prayer — join voice early."""
         self._cancel_disconnect_task(guild_id)
         vc = await self._ensure_voice_connected(guild_id)
         if vc:
-            await self._log_to_channel(guild_id, f"Joined voice channel <#{vc.channel.id}> 10 minutes before prayer.")
+            await self._log_to_channel(guild_id, f"Joined voice channel <#{vc.channel.id}> before prayer.")
 
     def _source_factory(self, path: str, seek_seconds: float, volume_percent: int):
         """Build FFmpegPCMAudio for local MP3 files."""
@@ -563,7 +541,7 @@ class PrayerBot(discord.Client):
         # Cancel any pending disconnect timer (new prayer resets the countdown)
         self._cancel_disconnect_task(guild_id)
 
-        # Schedule disconnect 5 minutes after playback FINISHES
+        # Schedule disconnect X minutes after playback FINISHES
         player.on_finish(self._make_schedule_disconnect(guild_id))
 
         # Play the audio
@@ -579,7 +557,7 @@ class PrayerBot(discord.Client):
         )
         await player.start(track)
 
-        log.info("Playing %s in guild %s (will disconnect 5 min after playback ends)", prayer_type.value, guild_id)
+        log.info("Playing %s in guild %s (will disconnect after stay duration)", prayer_type.value, guild_id)
         await self._log_to_channel(guild_id, f"Started playing **{prayer_type.value.title()}** prayer.")
         return True
 
@@ -587,7 +565,7 @@ class PrayerBot(discord.Client):
         """Called by PrayerScheduler when a prayer should play."""
         success = await self._start_prayer_playback(guild_id, prayer_type, filename)
         if success:
-            # Trigger immediate status update to "Prayer in progress"
+            # Trigger immediate status update to "Now praying"
             asyncio.create_task(self._update_all_voice_statuses())
         return success
 
@@ -658,9 +636,11 @@ class PrayerBot(discord.Client):
                 is_playing_prayer = player and player.is_playing() and not (guild_id in self._tts_playing)
                 
                 if not is_playing_prayer:
+                    cfg = get_guild_config(self.db, guild_id)
+                    pre_join_mins = cfg.pre_join_minutes if cfg else 10
                     minutes_left = self._get_next_prayer_minutes(guild_id)
                     # Requirement: Greet if before prayer starts. 
-                    if minutes_left is not None and minutes_left <= 10 and minutes_left > 0:
+                    if minutes_left is not None and minutes_left <= pre_join_mins and minutes_left > 0:
                         greeting = f"Welcome {member.display_name}, thank you for coming, we will start the prayer in {minutes_left} minutes."
                         
                         async def _greet_after_delay():
@@ -807,11 +787,6 @@ class PrayerBot(discord.Client):
                 await vc.disconnect()
                 log.info("Manually disconnected from voice in guild %s", guild_id)
                 await self._log_to_channel(guild_id, "Manually disconnected from voice channel.")
-                
-                # Persist connection state
-                scoped_state = GuildScopedState(self.db, guild_id)
-                scoped_state.is_connected = False
-                
                 return "ok:disconnected"
             return "ok:not_connected"
 
@@ -845,11 +820,8 @@ class PrayerBot(discord.Client):
             self._status_task.cancel()
         for scheduler in self.schedulers.values():
             await scheduler.stop()
-        for guild_id, vc in self.voice_connections.items():
+        for vc in self.voice_connections.values():
             with contextlib.suppress(Exception):
-                # Update DB state before actually disconnecting
-                scoped_state = GuildScopedState(self.db, guild_id)
-                scoped_state.is_connected = False
                 await vc.disconnect()
         self.db.close()
         await super().close()
@@ -963,7 +935,7 @@ class PrayerBot(discord.Client):
                     all_next_prayer_minutes.append(minutes_left)
                 
                 if is_playing:
-                    status = "Prayer in progress"
+                    status = "Now praying"
                 elif minutes_left is None:
                     status = "No prayers scheduled"
                 elif minutes_left <= 0:
@@ -972,11 +944,11 @@ class PrayerBot(discord.Client):
                     days, remainder = divmod(minutes_left, 1440)
                     hours, mins = divmod(remainder, 60)
                     if days > 0:
-                        status = f"Next prayer in ~{days}d {hours}h"
+                        status = f"Next prayer starts in ~{days}d {hours}h"
                     elif hours > 0:
-                        status = f"Next prayer in ~{hours}h {mins}m"
+                        status = f"Next prayer starts in ~{hours}h {mins}m"
                     else:
-                        status = f"Next prayer in ~{mins}m"
+                        status = f"Next prayer starts in ~{mins}m"
                 
                 # Official Voice Status Requirement: Bot MUST be in the channel
                 vc_conn = self.voice_connections.get(guild_id)
@@ -1016,7 +988,7 @@ class PrayerBot(discord.Client):
         if all_next_prayer_minutes:
             earliest_mins = min(all_next_prayer_minutes)
             h, m = divmod(earliest_mins, 60)
-            activity_text = f"Next prayer in ~{h}h {m}m" if h > 0 else f"Next prayer in ~{m}m"
+            activity_text = f"Next prayer starts in ~{h}h {m}m" if h > 0 else f"Next prayer starts in ~{m}m"
             await self.change_presence(activity=discord.Game(name=activity_text))
             log.info("Updated bot global activity: %s", activity_text)
 
@@ -1105,7 +1077,7 @@ class PrayerBot(discord.Client):
             )
             embed.add_field(name="Time", value=f"**{time_str}** ({day_str})", inline=True)
             embed.add_field(name="Timezone", value=tz_name, inline=True)
-            embed.set_footer(text="Join the voice channel 10 minutes early for the welcome greeting!")
+            embed.set_footer(text="Join the voice channel early for the welcome greeting!")
             
             await interaction.response.send_message(embed=embed, ephemeral=True)
 

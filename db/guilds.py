@@ -31,6 +31,8 @@ class GuildConfig:
     timezone_offset_hours: float = 0.0
     timezone_name: str = "UTC"
     tts_voice: str = "en-US-GuyNeural"
+    pre_join_minutes: int = 10
+    post_stay_minutes: int = 5
     updated_at: str | None = None
 
 
@@ -89,12 +91,14 @@ def apply_guild_config(
     timezone_offset_hours: float = 0.0,
     timezone_name: str = "UTC",
     tts_voice: str = "en-US-GuyNeural",
+    pre_join_minutes: int = 10,
+    post_stay_minutes: int = 5,
 ) -> None:
     """Persist an admin's per-server choices (dashboard save)."""
     db.execute(
         "INSERT INTO guild_configs"
-        "(guild_id, enabled, voice_channel_id, text_channel_id, logging_channel_id, timezone_offset_hours, timezone_name, tts_voice, updated_at) "
-        "VALUES(?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP) "
+        "(guild_id, enabled, voice_channel_id, text_channel_id, logging_channel_id, timezone_offset_hours, timezone_name, tts_voice, pre_join_minutes, post_stay_minutes, updated_at) "
+        "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP) "
         "ON CONFLICT(guild_id) DO UPDATE SET "
         "enabled=excluded.enabled, "
         "voice_channel_id=excluded.voice_channel_id, "
@@ -103,8 +107,10 @@ def apply_guild_config(
         "timezone_offset_hours=excluded.timezone_offset_hours, "
         "timezone_name=excluded.timezone_name, "
         "tts_voice=excluded.tts_voice, "
+        "pre_join_minutes=excluded.pre_join_minutes, "
+        "post_stay_minutes=excluded.post_stay_minutes, "
         "updated_at=CURRENT_TIMESTAMP",
-        (guild_id, bool(enabled), voice_channel_id or None, text_channel_id or None, logging_channel_id or None, float(timezone_offset_hours), timezone_name, tts_voice),
+        (guild_id, bool(enabled), voice_channel_id or None, text_channel_id or None, logging_channel_id or None, float(timezone_offset_hours), timezone_name, tts_voice, int(pre_join_minutes), int(post_stay_minutes)),
     )
 
 
@@ -155,6 +161,8 @@ def _row(r) -> GuildConfig:
         timezone_offset_hours=float(r["timezone_offset_hours"] or 0.0),
         timezone_name=r["timezone_name"] if "timezone_name" in r.keys() and r["timezone_name"] else "UTC",
         tts_voice=r["tts_voice"] if "tts_voice" in r.keys() and r["tts_voice"] else "en-US-GuyNeural",
+        pre_join_minutes=r["pre_join_minutes"] if "pre_join_minutes" in r.keys() and r["pre_join_minutes"] is not None else 10,
+        post_stay_minutes=r["post_stay_minutes"] if "post_stay_minutes" in r.keys() and r["post_stay_minutes"] is not None else 5,
         updated_at=r["updated_at"],
     )
 

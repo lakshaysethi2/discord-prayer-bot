@@ -7,7 +7,7 @@ from datetime import datetime, time, timedelta
 from typing import Callable, Awaitable
 
 from db.database import Database
-from db.prayers import get_weekly_schedule, get_audio_filename
+from db.prayers import get_weekly_schedule, get_audio_filename, get_guild_config
 from db.models import PrayerType
 
 log = logging.getLogger(__name__)
@@ -16,7 +16,7 @@ log = logging.getLogger(__name__)
 class PrayerScheduler:
     """Checks every 30 seconds for prayers that should play now or soon.
     
-    - Calls on_pre_prayer(guild_id) 10 min before scheduled prayer time.
+    - Calls on_pre_prayer(guild_id) X min before scheduled prayer time.
     - Calls play_prayer(guild_id, prayer_type, filename) at exact prayer time.
     """
 
@@ -69,6 +69,10 @@ class PrayerScheduler:
         self._pre_joined = {k for k in self._pre_joined if k.split(":")[0] >= today_str}
         self._played = {k for k in self._played if k.startswith(today_str)}
 
+        # Get pre-join config
+        cfg = get_guild_config(self.db, self.guild_id)
+        pre_join_mins = cfg.pre_join_minutes if cfg else 10
+
         schedules = get_weekly_schedule(self.db, self.guild_id)
 
         for sched in schedules:
@@ -84,24 +88,19 @@ class PrayerScheduler:
                 microsecond=0
             ) + timedelta(days=days_ahead)
             
-            # If the calculated prayer_dt is in the past (e.g., it's Monday 10am and we're looking at Monday 8am)
-            # and days_ahead is 0, we don't want to trigger.
-            # But % 7 handles the future. If we want the *next* occurrence, we'd add 7.
-            # For the pre-join, we only care about occurrences in the next 10 minutes.
-            
             pre_key = f"{prayer_dt.date().isoformat()}:{sched.day_of_week}:{sched.prayer_type.value}"
             play_key = f"{today_str}:{sched.day_of_week}:{sched.prayer_type.value}"
 
-            # Pre-join logic: Trigger if the prayer is starting within the next 10 minutes
+            # Pre-join logic: Trigger if the prayer is starting within the next pre_join_mins minutes
             # but has not started yet.
             if (self.on_pre_prayer 
-                    and now < prayer_dt <= (now + timedelta(minutes=10))
+                    and now < prayer_dt <= (now + timedelta(minutes=pre_join_mins))
                     and pre_key not in self._pre_joined):
                 self._pre_joined.add(pre_key)
                 try:
                     await self.on_pre_prayer(self.guild_id)
-                    log.info("Pre-joined voice for %s in guild %s (within 10 min window)",
-                             sched.prayer_type.value, self.guild_id)
+                    log.info("Pre-joined voice for %s in guild %s (within %d min window)",
+                             sched.prayer_type.value, self.guild_id, pre_join_mins)
                 except Exception as exc:
                     log.exception("Pre-join failed: %s", exc)
 
