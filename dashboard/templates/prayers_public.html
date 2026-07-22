@@ -47,7 +47,7 @@
             class="bg-transparent border-none text-slate-200 outline-none cursor-pointer">
       <option value="local">Detecting...</option>
       {% for tz in all_timezones %}
-      <option value="{{ tz }}" {% if tz == current_tz %}selected{% endif %}>{{ tz }}</option>
+      <option value="{{ tz }}">{{ tz }}</option>
       {% endfor %}
     </select>
   </div>
@@ -84,18 +84,17 @@
 {% endif %}
 
 <script>
-// Browser timezone for initial default if not set
+// Browser timezone for initial default
 const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-const savedTz = "{{ current_tz }}";
-let currentTz = savedTz === 'UTC' ? browserTz : savedTz;
+let currentTz = browserTz;
 
-// If we are defaulting to browser, update the selector
-if (savedTz === 'UTC') {
-  const selector = document.getElementById('tz-selector');
-  if (selector) {
-    selector.value = currentTz;
-  }
+// Populate "Detecting..." with actual name
+const localOpt = document.querySelector('#tz-selector option[value="local"]');
+if (localOpt) {
+  localOpt.textContent = 'Local: ' + browserTz;
+  localOpt.value = browserTz;
 }
+document.getElementById('tz-selector').value = browserTz;
 
 function updatePerspective(newTz) {
   currentTz = newTz;
