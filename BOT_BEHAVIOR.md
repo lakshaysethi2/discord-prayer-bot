@@ -67,7 +67,7 @@ The bot provides constant feedback on the upcoming schedule through three differ
 *   **Disable All**: Immediately deactivates the entire schedule without deleting your saved times.
 
 ### 🔊 Volume Management
-*   Admins can adjust the volume from **50% to 450%** per server.
+*   Admins can adjust the volume from **50% to 750%** per server.
 *   **Consistent Greetings**: Greetings and blessings always play at a clear 100% volume, while the volume boost applies only to the prayer audio itself.
 *   **Live Updates**: If you change the volume while a prayer is playing, the bot will instantly restart the stream at the new volume level from the exact same second.
 

@@ -597,7 +597,7 @@ async def set_volume(
 ):
     require_auth(request)
     from dashboard.commands import enqueue
-    vol = min(450, max(50, int(volume_percent)))
+    vol = min(750, max(50, int(volume_percent)))
     enqueue(db, command="set_volume", requested_by="admin", payload={
         "guild_id": guild_id,
         "volume_percent": vol,
