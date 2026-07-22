@@ -78,6 +78,7 @@ class PrayerBot(discord.Client):
         self.tree = discord.app_commands.CommandTree(self)
         self._tts_playing: set[str] = set() # guild_id -> is_tts_active
         self._tts_queues: dict[str, asyncio.Queue] = {} # guild_id -> Queue[str]
+        self._pending_joiners: dict[str, list[discord.Member]] = {} # guild_id -> list of members to greet
         self._status_task: asyncio.Task | None = None
         self._cleanup_task: asyncio.Task | None = None
 
@@ -633,18 +634,42 @@ class PrayerBot(discord.Client):
                     cfg = get_guild_config(self.db, guild_id)
                     pre_join_mins = cfg.pre_join_minutes if cfg else 10
                     minutes_left = self._get_next_prayer_minutes(guild_id)
+                    
                     # Requirement: Greet if before prayer starts. 
                     if minutes_left is not None and minutes_left <= pre_join_mins and minutes_left > 0:
-                        greeting = f"Welcome {member.display_name}, thank you for coming, we will start the prayer in {minutes_left} minutes."
+                        # Requirement 22: Aggregate joiners into a single greeting
+                        if guild_id not in self._pending_joiners:
+                            self._pending_joiners[guild_id] = []
                         
-                        async def _greet_after_delay():
-                            await asyncio.sleep(5)  # Wait 5 seconds for user to fully connect
-                            # Re-verify they are still in the channel before speaking
-                            current_vc = self.voice_connections.get(guild_id)
-                            if current_vc and current_vc.is_connected() and member in current_vc.channel.members:
+                        self._pending_joiners[guild_id].append(member)
+                        
+                        # If this is the first joiner, start the 5s collection timer
+                        if len(self._pending_joiners[guild_id]) == 1:
+                            async def _process_group_greeting():
+                                await asyncio.sleep(5) # Wait for other concurrent joiners
+                                
+                                members = self._pending_joiners.pop(guild_id, [])
+                                # Filter members who are still in the channel
+                                current_vc = self.voice_connections.get(guild_id)
+                                if not current_vc or not current_vc.is_connected():
+                                    return
+                                    
+                                still_present = [m.display_name for m in members if m in current_vc.channel.members]
+                                if not still_present:
+                                    return
+                                    
+                                # Format names: "A", "A and B", or "A, B, and C"
+                                if len(still_present) == 1:
+                                    names_text = still_present[0]
+                                elif len(still_present) == 2:
+                                    names_text = f"{still_present[0]} and {still_present[1]}"
+                                else:
+                                    names_text = f"{', '.join(still_present[:-1])}, and {still_present[-1]}"
+                                
+                                greeting = f"Welcome {names_text}, thank you for coming, we will start the prayer in {minutes_left} minutes."
                                 await self._say_tts(guild_id, greeting)
-                        
-                        asyncio.create_task(_greet_after_delay())
+
+                            asyncio.create_task(_process_group_greeting())
 
         # User left or moved
         if before.channel is not None and (after.channel is None or before.channel.id != after.channel.id):
