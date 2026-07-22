@@ -265,10 +265,17 @@ class PrayerBot(discord.Client):
             # Only disconnect if we're not currently playing
             player = self.players.get(guild_id)
             if player is None or not player.is_playing():
+                # One final status refresh while still connected
+                await self._update_all_voice_statuses()
+                
                 self.voice_connections.pop(guild_id, None)
                 await vc.disconnect()
-                log.info("Disconnected from voice in guild %s (idle timeout)", guild_id)
-                await self._log_to_channel(guild_id, "Disconnected from voice channel due to idle timeout.")
+                log.info("Disconnected from voice in guild %s (stay duration ended)", guild_id)
+                await self._log_to_channel(guild_id, "Disconnected from voice channel (stay duration ended).")
+                
+                # Persist connection state
+                scoped_state = GuildScopedState(self.db, guild_id)
+                scoped_state.is_connected = False
 
     def _cancel_disconnect_task(self, guild_id: str) -> None:
         """Cancel any pending disconnect timer for the guild."""
@@ -410,6 +417,8 @@ class PrayerBot(discord.Client):
         vc = await self._ensure_voice_connected(guild_id)
         if vc:
             await self._log_to_channel(guild_id, f"Joined voice channel <#{vc.channel.id}> before prayer.")
+            # Requirement 21: Trigger immediate status update upon early entry
+            asyncio.create_task(self._update_all_voice_statuses())
 
     def _source_factory(self, path: str, seek_seconds: float, volume_percent: int):
         """Build FFmpegPCMAudio for local MP3 files."""
