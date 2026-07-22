@@ -27,7 +27,7 @@ A Discord bot that plays scheduled prayer audio (6 traditions: Buddhist, Christi
 - Weekly schedule editor with dual Save buttons (top/bottom)
 - Prayer History view showing the last 50 recitation events
 - Ad-hoc "Play Now" button for instant recitation
-- Volume slider (50%–450%) and live controls relocated to per-server Schedule page
+- Volume slider (50%–750%) and live controls relocated to per-server Schedule page
 - Tailwind CSS dark theme
 
 ### FR-4: Discord Interaction (Slash Commands & TTS)

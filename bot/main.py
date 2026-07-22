@@ -125,9 +125,6 @@ class PrayerBot(discord.Client):
         # Log startup complete
         log.info("Prayer Bot ready — %d guilds, %d schedulers active",
                  len(self.guilds), len(self.schedulers))
-        
-        # Initial status update immediately after startup
-        asyncio.create_task(self._update_all_voice_statuses())
 
     async def _discover_guild(self, guild: discord.Guild) -> None:
         """Discover a guild's channels and create default config (discord-radio pattern)."""
@@ -738,13 +735,13 @@ class PrayerBot(discord.Client):
             
             if guild_id:
                 # Clamp before saving to scoped state
-                vol = min(450, max(50, vol))
+                vol = min(750, max(50, vol))
                 scoped_state = GuildScopedState(self.db, guild_id)
                 scoped_state.stream_volume_percent = vol
                 return f"ok:volume_saved:{vol}"
                 
             # Fallback to global state
-            self.bot_state.stream_volume_percent = min(450, max(50, vol))
+            self.bot_state.stream_volume_percent = min(750, max(50, vol))
             return "ok:volume_saved"
 
         elif command == "refresh_playlist":
@@ -954,10 +951,9 @@ class PrayerBot(discord.Client):
                 vc_conn = self.voice_connections.get(guild_id)
                 if vc_conn and vc_conn.is_connected() and vc_conn.channel.id == voice_channel.id:
                     try:
-                        if hasattr(voice_channel, "set_status"):
-                            await voice_channel.set_status(status)
-                        else:
-                            await voice_channel.edit(status=status)
+                        # Small buffer to ensure API is ready
+                        await asyncio.sleep(1)
+                        await voice_channel.edit(status=status)
                         log.info("Set official VC status for guild %s: %s", guild_id, status)
                     except Exception as exc:
                         log.debug("Official VC status update failed: %s", exc)
@@ -965,11 +961,12 @@ class PrayerBot(discord.Client):
                     # Temporarily join to set status (the user explicitly requested this "blip" approach)
                     try:
                         temp_vc = await voice_channel.connect(timeout=10.0, reconnect=False)
-                        if hasattr(voice_channel, "set_status"):
-                            await voice_channel.set_status(status)
-                        else:
-                            await voice_channel.edit(status=status)
+                        # Wait 2 seconds after joining for Discord to recognize the presence
+                        await asyncio.sleep(2)
+                        await voice_channel.edit(status=status)
                         log.info("Set official VC status via blip for guild %s: %s", guild_id, status)
+                        # Wait 2 seconds for the status to propagate before leaving
+                        await asyncio.sleep(2)
                     except Exception as exc:
                         log.debug("Temporary join/status blip failed in guild %s: %s", guild_id, exc)
 
