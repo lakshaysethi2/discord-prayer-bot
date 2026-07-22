@@ -116,6 +116,8 @@ SCHEMA: tuple[str, ...] = (
         timezone_offset_hours REAL DEFAULT 0.0,
         timezone_name     TEXT DEFAULT 'UTC',
         tts_voice         TEXT DEFAULT 'en-US-GuyNeural',
+        pre_join_minutes  INTEGER DEFAULT 10,
+        post_stay_minutes INTEGER DEFAULT 5,
         updated_at        DATETIME
     )
     """,
@@ -226,6 +228,8 @@ class GuildConfig:
     timezone_offset_hours: float = 0.0
     timezone_name: str = "UTC"
     tts_voice: str = "en-US-GuyNeural"
+    pre_join_minutes: int = 10
+    post_stay_minutes: int = 5
     updated_at: str | None = None
 
 

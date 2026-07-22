@@ -85,6 +85,18 @@
             {% endfor %}
           </select>
         </label>
+
+        <label class="text-sm">
+          <span class="block text-slate-400 mb-1">Pre-join (minutes)</span>
+          <input type="number" name="pre_join_minutes" value="{{ s.pre_join_minutes }}" min="0" max="60"
+                 class="w-full rounded bg-slate-800 border border-slate-700 px-2 py-1.5 text-slate-100">
+        </label>
+
+        <label class="text-sm">
+          <span class="block text-slate-400 mb-1">Post-stay (minutes)</span>
+          <input type="number" name="post_stay_minutes" value="{{ s.post_stay_minutes }}" min="0" max="60"
+                 class="w-full rounded bg-slate-800 border border-slate-700 px-2 py-1.5 text-slate-100">
+        </label>
       </div>
 
       <div class="mt-3 flex items-center justify-between">
