@@ -276,7 +276,7 @@ class PrayerBot(discord.Client):
             task.cancel()
             log.debug("Cancelled pending disconnect task for guild %s", guild_id)
 
-    async def _make_schedule_disconnect(self, guild_id: str):
+    def _make_schedule_disconnect(self, guild_id: str):
         """Return a callback that schedules disconnect X min after playback finishes."""
         async def _on_finish(player, track):
             # Cleanup notification message
@@ -286,22 +286,9 @@ class PrayerBot(discord.Client):
             try:
                 vc = self.voice_connections.get(guild_id)
                 if vc and vc.is_connected():
-                    # Collect names of people who stayed
-                    listeners = [m.display_name for m in vc.channel.members if not m.bot]
-                    if listeners:
-                        if len(listeners) == 1:
-                            names_text = listeners[0]
-                        elif len(listeners) == 2:
-                            names_text = f"{listeners[0]} and {listeners[1]}"
-                        else:
-                            names_text = f"{', '.join(listeners[:-1])}, and {listeners[-1]}"
-                        
-                        # Requirement 11: 5 seconds after finishing, say the message.
-                        await asyncio.sleep(5)
-                        await self._say_tts(guild_id, f"Thank you {names_text} for joining the prayer session, God bless you.")
-                    else:
-                        await asyncio.sleep(5)
-                        await self._say_tts(guild_id, "Thank you all for joining the prayer session, God bless you.")
+                    # Requirement 11: 5 seconds after finishing, say the exact message.
+                    await asyncio.sleep(5)
+                    await self._say_tts(guild_id, "Thank you all for joining the prayer session, God bless you.")
             except Exception as exc:
                 log.exception("Post-prayer TTS failed: %s", exc)
 
