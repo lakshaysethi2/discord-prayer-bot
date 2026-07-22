@@ -97,6 +97,12 @@
           <input type="number" name="post_stay_minutes" value="{{ s.post_stay_minutes }}" min="0" max="60"
                  class="w-full rounded bg-slate-800 border border-slate-700 px-2 py-1.5 text-slate-100">
         </label>
+
+        <label class="flex items-center gap-2 text-sm cursor-pointer select-none mt-4">
+          <input type="checkbox" name="status_blip_enabled" value="on" {{ "checked" if s.status_blip_enabled else "" }}
+                 class="h-4 w-4 rounded border-slate-600 bg-slate-800">
+          <span class="text-slate-300">Enable Voice Status Blip (Updates countdown every minute)</span>
+        </label>
       </div>
 
       <div class="mt-3 flex items-center justify-between">

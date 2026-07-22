@@ -99,6 +99,7 @@ class Database:
                 self._ensure_column(cur, "guild_configs", "tts_voice", "TEXT DEFAULT 'en-US-GuyNeural'")
                 self._ensure_column(cur, "guild_configs", "pre_join_minutes", "INTEGER DEFAULT 10")
                 self._ensure_column(cur, "guild_configs", "post_stay_minutes", "INTEGER DEFAULT 5")
+                self._ensure_column(cur, "guild_configs", "status_blip_enabled", "BOOLEAN DEFAULT 0")
                 self._ensure_column(cur, "guild_configs", "logging_channel_id", "TEXT")
                 # Backfill: add guild_id to watch_sessions if missing
                 self._ensure_column(cur, "watch_sessions", "guild_id", "TEXT NOT NULL DEFAULT ''")

@@ -511,6 +511,7 @@ async def servers_page(
             "tts_voice": cfg.tts_voice if cfg else "en-US-GuyNeural",
             "pre_join_minutes": cfg.pre_join_minutes if cfg else 10,
             "post_stay_minutes": cfg.post_stay_minutes if cfg else 5,
+            "status_blip_enabled": cfg.status_blip_enabled if cfg else False,
             "voice_channels": voice_channels,
             "text_channels": text_channels,
         })
@@ -536,6 +537,7 @@ async def servers_update(
     tts_voice: str = Form("en-US-GuyNeural"),
     pre_join_minutes: int = Form(10),
     post_stay_minutes: int = Form(5),
+    status_blip_enabled: str = Form("off"),
     db: Database = Depends(get_db),
 ):
     require_auth(request)
@@ -545,6 +547,7 @@ async def servers_update(
 
     cfg = get_guild_config(db, guild_id)
     wants_enabled = enabled == "on"
+    blip_enabled = status_blip_enabled == "on"
     apply_guild_config(
         db,
         guild_id,
@@ -557,6 +560,7 @@ async def servers_update(
         tts_voice=tts_voice,
         pre_join_minutes=pre_join_minutes,
         post_stay_minutes=post_stay_minutes,
+        status_blip_enabled=blip_enabled,
     )
     # Enqueue live apply (no restart) — task 3 / 4
     from dashboard.commands import enqueue

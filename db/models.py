@@ -118,6 +118,7 @@ SCHEMA: tuple[str, ...] = (
         tts_voice         TEXT DEFAULT 'en-US-GuyNeural',
         pre_join_minutes  INTEGER DEFAULT 10,
         post_stay_minutes INTEGER DEFAULT 5,
+        status_blip_enabled BOOLEAN DEFAULT 0,
         updated_at        DATETIME
     )
     """,
@@ -230,6 +231,7 @@ class GuildConfig:
     tts_voice: str = "en-US-GuyNeural"
     pre_join_minutes: int = 10
     post_stay_minutes: int = 5
+    status_blip_enabled: bool = False
     updated_at: str | None = None
 
 

@@ -36,7 +36,7 @@ A Discord bot that plays scheduled prayer audio (6 traditions: Buddhist, Christi
 - **TTS Blessings**: Bot thanks users by name after prayer finishes: *"Thank you [Name A] and [Name B] for joining, god bless you."*
 - **Sequential Queue**: Greetings play one after another without audio overlaps
 - **Logging Channel**: Optional channel for bot event logs (joins, prayers, disconnects)
-- **Voice Status**: Bot sets VC status text and global activity countdown
+- **Voice Status**: Bot sets VC status text and global activity countdown. The voice channel status update via 'blip' join is disabled by default and can be toggled by admins.
 
 ### FR-5: Public Schedule View
 - Unauthenticated view at `/prayers/public/{guild_id}`
