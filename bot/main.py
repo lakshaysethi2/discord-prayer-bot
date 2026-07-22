@@ -18,6 +18,7 @@ import logging
 import os
 import signal
 import hashlib
+import math
 from pathlib import Path
 
 import discord
@@ -591,7 +592,7 @@ class PrayerBot(discord.Client):
             return {
                 "schedule": best_sched,
                 "datetime": best_dt,
-                "minutes_left": int(delta.total_seconds() / 60)
+                "minutes_left": math.ceil(delta.total_seconds() / 60)
             }
         return None
 
@@ -839,7 +840,7 @@ class PrayerBot(discord.Client):
     # ------------------------------------------------------------------ status loop
 
     async def _voice_status_loop(self) -> None:
-        """Background loop to update voice channel status every 30 minutes."""
+        """Background loop to update voice channel status every minute."""
         # Wait until ready so we have guild information
         await self.wait_until_ready()
         
@@ -849,8 +850,8 @@ class PrayerBot(discord.Client):
             except Exception:
                 log.exception("Error in voice status loop")
             
-            # Sleep for 30 minutes (1800 seconds)
-            await asyncio.sleep(1800)
+            # Sleep for 1 minute (60 seconds) to keep the countdown accurate
+            await asyncio.sleep(60)
 
     def _log_permissions(self, guild: discord.Guild, voice_channel_id: str | None) -> None:
         """Log the bot's permissions in the guild and target voice channel."""
