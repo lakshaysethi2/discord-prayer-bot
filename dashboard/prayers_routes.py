@@ -195,9 +195,9 @@ async def prayers_admin(
     guild_rows = db.fetchall("SELECT guild_id, guild_name FROM guild_configs ORDER BY guild_name, guild_id")
     all_guilds = [{"guild_id": r["guild_id"], "name": r["guild_name"] or r["guild_id"]} for r in guild_rows]
     current_guild_name = cfg.guild_name if cfg else guild_id
-    current_tz = cfg.timezone_name if cfg and cfg.timezone_name else "UTC"
     
     # Get common timezones for dropdown
+    import pytz
     all_timezones = pytz.common_timezones
 
     # Get current volume for this guild
@@ -214,7 +214,6 @@ async def prayers_admin(
             "all_guilds": all_guilds,
             "schedules": existing,
             "current_volume": current_volume,
-            "current_tz": current_tz,
             "all_timezones": all_timezones,
             "get_audio_filename": get_audio_filename,
         },
@@ -231,22 +230,9 @@ async def save_prayers(
     require_auth(request)
     form_data = await request.form()
     schedules = get_weekly_schedule(db, guild_id)
-    cfg = get_guild_config(db, guild_id)
 
-    # 1. Update the guild's timezone first
-    if cfg:
-        apply_guild_config(
-            db, guild_id, 
-            enabled=cfg.enabled, 
-            voice_channel_id=cfg.voice_channel_id,
-            text_channel_id=cfg.text_channel_id,
-            logging_channel_id=cfg.logging_channel_id,
-            timezone_offset_hours=cfg.timezone_offset_hours,
-            timezone_name=timezone_name,
-            tts_voice=cfg.tts_voice
-        )
-
-    # 2. Convert and save schedules
+    # Convert and save schedules
+    import pytz
     tz = pytz.timezone(timezone_name)
     now = datetime.now() # Current date to determine correct DST offset
     
@@ -427,9 +413,7 @@ async def prayers_public(
     current_guild_name = cfg.guild_name if cfg else guild_id
     current_tz = cfg.timezone_name if cfg and cfg.timezone_name else "UTC"
 
-    # Build rows (server handles UTC → local conversion based on saved timezone)
-    tz = pytz.timezone(current_tz)
-    now = datetime.now()
+    # Build rows (browser handles UTC → local conversion)
     
     # Filter enabled schedules and organize by day for the template
     enabled_schedules = [s for s in schedules if s.enabled]
@@ -438,18 +422,9 @@ async def prayers_public(
     for day_idx in range(7):
         day_schedules = [s for s in enabled_schedules if s.day_of_week == day_idx]
         if day_schedules:
-            formatted_schedules = []
-            for s in day_schedules:
-                # Convert UTC to local using Python/pytz
-                utc_dt = pytz.UTC.localize(datetime.combine(now.date(), s.time_utc))
-                local_dt = utc_dt.astimezone(tz)
-                formatted_schedules.append({
-                    "schedule": s,
-                    "local_time_str": local_dt.strftime("%H:%M")
-                })
             schedules_by_day.append({
                 "day_name": days_list[day_idx],
-                "schedules": formatted_schedules,
+                "schedules": [{"schedule": s} for s in day_schedules],
             })
 
     # Compute next upcoming prayer
@@ -488,6 +463,9 @@ async def prayers_public(
                 "in_hours": hours,
                 "in_minutes": minutes,
             }
+    
+    # Get common timezones for dropdown
+    all_timezones = pytz.common_timezones
 
     return templates.TemplateResponse(
         request,
@@ -498,8 +476,7 @@ async def prayers_public(
             "all_guilds": all_guilds,
             "schedules_by_day": schedules_by_day,
             "next_prayer": next_prayer,
-            "current_tz": current_tz,
-            "all_timezones": pytz.common_timezones,
+            "all_timezones": all_timezones,
             "is_live": is_live,
             "voice_channel_id": cfg.voice_channel_id if cfg else "",
         },
