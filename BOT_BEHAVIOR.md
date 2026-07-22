@@ -51,8 +51,10 @@ The bot provides constant feedback on the upcoming schedule through three differ
 *   The text appearing under the bot's name in the member list always shows the earliest upcoming prayer across all servers (e.g., *"Playing Next prayer in ~2h 15m"*).
 
 ### 🎙️ Voice Channel Status
-*   Every **30 minutes**, the bot performs a "status blip." It temporarily enters the voice channel (if not already there), updates the status text next to the channel name (e.g., *"Next prayer in ~45m"*), and then immediately leaves.
-*   This ensures the countdown is always visible to members looking at the channel list.
+*   Every **minute**, the bot updates the countdown status (e.g., *"Next prayer starts in ~45m"*).
+*   **Status Blips**: If enabled by an admin, the bot will temporarily enter the voice channel (if not already there), update the status text next to the channel name, and then immediately leave. 
+*   **Control**: This feature is **disabled by default** and can be toggled per-server in the Dashboard settings.
+*   This ensures the countdown is always visible to members looking at the channel list without requiring the bot to stay connected.
 
 ### 🧹 Notification Cleanup
 *   The bot posts a text notification when a prayer starts: *"🕌 [Tradition] Prayer is now playing..."*

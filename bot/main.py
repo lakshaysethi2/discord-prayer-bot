@@ -946,17 +946,20 @@ class PrayerBot(discord.Client):
                     except Exception as exc:
                         log.debug("Official VC status update failed: %s", exc)
                 elif not vc_conn or not vc_conn.is_connected():
-                    # Temporarily join to set status (the user explicitly requested this "blip" approach)
-                    try:
-                        temp_vc = await voice_channel.connect(timeout=10.0, reconnect=False)
-                        # Wait 2 seconds after joining for Discord to recognize the presence
-                        await asyncio.sleep(2)
-                        await voice_channel.edit(status=status)
-                        log.info("Set official VC status via blip for guild %s: %s", guild_id, status)
-                        # Wait 2 seconds for the status to propagate before leaving
-                        await asyncio.sleep(2)
-                    except Exception as exc:
-                        log.debug("Temporary join/status blip failed in guild %s: %s", guild_id, exc)
+                    # Temporarily join to set status if feature is enabled
+                    if cfg.status_blip_enabled:
+                        try:
+                            temp_vc = await voice_channel.connect(timeout=10.0, reconnect=False)
+                            # Wait 2 seconds after joining for Discord to recognize the presence
+                            await asyncio.sleep(2)
+                            await voice_channel.edit(status=status)
+                            log.info("Set official VC status via blip for guild %s: %s", guild_id, status)
+                            # Wait 2 seconds for the status to propagate before leaving
+                            await asyncio.sleep(2)
+                        except Exception as exc:
+                            log.debug("Temporary join/status blip failed in guild %s: %s", guild_id, exc)
+                    else:
+                        log.debug("Skipping status blip for guild %s (feature disabled)", guild_id)
 
             except Exception as exc:
                 log.warning("Unexpected error updating status for guild %s: %s", guild_id, exc)
