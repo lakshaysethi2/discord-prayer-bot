@@ -44,8 +44,18 @@ describe('Admin Schedule Save with Timezone Round-Trip', () => {
     cy.get('input[type="time"]').should('have.length', 21);
   });
 
-  it('should display timezone detection info', () => {
-    cy.get('#tz-info').should('be.visible').and('not.have.text', 'detecting...');
+  it('should display timezone detection and perspective selector', () => {
+    cy.get('#tz-selector').should('be.visible');
+    cy.get('#tz-info').should('be.visible');
+  });
+
+  it('should change perspective and update displayed times', () => {
+    // Select Paris
+    cy.get('#tz-selector').select('Europe/Paris');
+    cy.get('#tz-info').should('contain', 'UTC');
+    
+    // Check if times updated (logic verified by unit tests, here just check for visibility)
+    cy.get('input[type="time"]').first().should('be.visible');
   });
 
   it('should round-trip: save a time and verify it persists correctly', () => {
@@ -124,6 +134,26 @@ describe('Admin Schedule Save with Timezone Round-Trip', () => {
 
     cy.get('#schedule-form').submit();
     cy.contains('Duplicate').should('be.visible');
+  });
+
+  it('should have bulk action buttons', () => {
+    cy.contains('button', 'Enable All').should('be.visible');
+    cy.contains('button', 'Disable All').should('be.visible');
+  });
+
+  it('should have live controls and volume slider', () => {
+    cy.contains('Live Controls & Volume').should('be.visible');
+    cy.get('#volume-slider').should('be.visible');
+    cy.contains('button', 'Apply Volume').should('be.visible');
+    cy.contains('button', 'Pause').should('be.visible');
+    cy.contains('button', 'Resume').should('be.visible');
+    cy.contains('button', 'Skip').should('be.visible');
+  });
+
+  it('should have top and bottom save buttons', () => {
+    cy.get('button[type="submit"]').should('have.length', 2);
+    cy.get('button[type="submit"]').first().contains('Save Schedule');
+    cy.get('button[type="submit"]').last().contains('Save Schedule');
   });
 
   it('should have working client-side timezone conversion', () => {

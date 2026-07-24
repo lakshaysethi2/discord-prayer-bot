@@ -27,7 +27,13 @@ class GuildConfig:
     enabled: bool
     voice_channel_id: str | None
     text_channel_id: str | None
+    logging_channel_id: str | None = None
     timezone_offset_hours: float = 0.0
+    timezone_name: str = "UTC"
+    tts_voice: str = "en-US-GuyNeural"
+    pre_join_minutes: int = 10
+    post_stay_minutes: int = 5
+    status_blip_enabled: bool = False
     updated_at: str | None = None
 
 
@@ -82,20 +88,32 @@ def apply_guild_config(
     enabled: bool,
     voice_channel_id: str | None = None,
     text_channel_id: str | None = None,
+    logging_channel_id: str | None = None,
     timezone_offset_hours: float = 0.0,
+    timezone_name: str = "UTC",
+    tts_voice: str = "en-US-GuyNeural",
+    pre_join_minutes: int = 10,
+    post_stay_minutes: int = 5,
+    status_blip_enabled: bool = False,
 ) -> None:
     """Persist an admin's per-server choices (dashboard save)."""
     db.execute(
         "INSERT INTO guild_configs"
-        "(guild_id, enabled, voice_channel_id, text_channel_id, timezone_offset_hours, updated_at) "
-        "VALUES(?, ?, ?, ?, ?, CURRENT_TIMESTAMP) "
+        "(guild_id, enabled, voice_channel_id, text_channel_id, logging_channel_id, timezone_offset_hours, timezone_name, tts_voice, pre_join_minutes, post_stay_minutes, status_blip_enabled, updated_at) "
+        "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP) "
         "ON CONFLICT(guild_id) DO UPDATE SET "
         "enabled=excluded.enabled, "
         "voice_channel_id=excluded.voice_channel_id, "
         "text_channel_id=excluded.text_channel_id, "
+        "logging_channel_id=excluded.logging_channel_id, "
         "timezone_offset_hours=excluded.timezone_offset_hours, "
+        "timezone_name=excluded.timezone_name, "
+        "tts_voice=excluded.tts_voice, "
+        "pre_join_minutes=excluded.pre_join_minutes, "
+        "post_stay_minutes=excluded.post_stay_minutes, "
+        "status_blip_enabled=excluded.status_blip_enabled, "
         "updated_at=CURRENT_TIMESTAMP",
-        (guild_id, bool(enabled), voice_channel_id or None, text_channel_id or None, float(timezone_offset_hours)),
+        (guild_id, bool(enabled), voice_channel_id or None, text_channel_id or None, logging_channel_id or None, float(timezone_offset_hours), timezone_name, tts_voice, int(pre_join_minutes), int(post_stay_minutes), int(status_blip_enabled)),
     )
 
 
@@ -127,7 +145,11 @@ def seed_env_guild(db: Database, config: object) -> None:
         tcid = get_associated_text_channel(db, gid, vcid)
     known = {ch.channel_id: ch.channel_type for ch in get_guild_channels(db, gid)}
     if vcid in known and (tcid is None or tcid in known):
-        apply_guild_config(db, gid, enabled=True, voice_channel_id=vcid, text_channel_id=tcid)
+        apply_guild_config(
+            db, gid, enabled=True, voice_channel_id=vcid, text_channel_id=tcid,
+            timezone_offset_hours=existing.timezone_offset_hours if existing else 0.0,
+            tts_voice=existing.tts_voice if existing else "en-US-GuyNeural"
+        )
 
 
 # --------------------------------------------------------------------- reads
@@ -138,7 +160,13 @@ def _row(r) -> GuildConfig:
         enabled=bool(r["enabled"]),
         voice_channel_id=r["voice_channel_id"],
         text_channel_id=r["text_channel_id"],
+        logging_channel_id=r["logging_channel_id"] if "logging_channel_id" in r.keys() else None,
         timezone_offset_hours=float(r["timezone_offset_hours"] or 0.0),
+        timezone_name=r["timezone_name"] if "timezone_name" in r.keys() and r["timezone_name"] else "UTC",
+        tts_voice=r["tts_voice"] if "tts_voice" in r.keys() and r["tts_voice"] else "en-US-GuyNeural",
+        pre_join_minutes=r["pre_join_minutes"] if "pre_join_minutes" in r.keys() and r["pre_join_minutes"] is not None else 10,
+        post_stay_minutes=r["post_stay_minutes"] if "post_stay_minutes" in r.keys() and r["post_stay_minutes"] is not None else 5,
+        status_blip_enabled=bool(r["status_blip_enabled"]) if "status_blip_enabled" in r.keys() and r["status_blip_enabled"] is not None else False,
         updated_at=r["updated_at"],
     )
 

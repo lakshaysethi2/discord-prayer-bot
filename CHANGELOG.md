@@ -4,12 +4,49 @@ All notable changes to the Discord Prayer Bot.
 
 ## [Unreleased]
 
+### Added
+- **10-minute pre-join**: Bot now enters the voice channel 10 minutes before scheduled prayer.
+- **5-minute post-prayer leave**: Bot automatically disconnects 5 minutes after recitation finishes.
+- **Slash Commands**: Added `/start` (adhoc play) and `/exit` (emergency stop/disconnect) commands.
+- **TTS Greetings & Blessings**: Personalized welcomes for joiners and a "thank you" blessing after prayers.
+- **Sequential TTS Queue**: Per-guild queue ensures greetings play one after another without overlaps.
+- **Logging Channel**: Dedicated Discord channel for bot events (joins, prayers, disconnects).
+- **Prayer History**: New dashboard tab showing the last 50 successful or failed recitation events.
+- **"Enable All" / "Disable All"**: Bulk actions on the schedule page with smart default time filling.
+- **Configurable Voices**: Per-server selection between Male (Guy), Female (Aria), and British (Sonia) TTS voices.
+- **Health Check**: Added `/health` API endpoint for monitoring database and bot connectivity.
+- **make update**: Simplified deployment command for Git pull, rebuild, and container restart.
+- **Detailed Behavior Spec**: Created `BOT_BEHAVIOR.md` describing every aspect of the bot's lifecycle.
+
+### Changed
+- **Improved Adhoc Flow**: Manual starts now use a respectful sequence (5s pause -> Announcement -> 5s pause -> Recitation).
+- **Restart Resilience**: Bot now checks a range (next 10m) on startup to ensure it joins even if it starts late.
+- **Volume Consistency**: Prayer volume boost no longer applies to TTS greetings (fixed at 100%).
+- **Guild-Scoped State**: Refactored `BotState` to be strictly scoped per-guild, ensuring complete isolation of playback position and volume between servers.
+- **Notification Cleanup**: Bot now deletes its previous "Now Playing" message when a prayer ends to prevent text channel spam.
+- **Status Blips**: Bot temporarily joins voice every 30m to update the "Voice Channel Status" text without needing to stay connected.
+- **Voice-Text Notifications**: Voice channels can now be selected in the dashboard as text notification targets.
+- **Refined Schedule UI**: Smaller bulk-action buttons and dual Save buttons (top and bottom).
+- **Scheduler Precision**: 30-second check loop with date-scoped pre-join markers to prevent double-play on restarts.
+
 ### Fixed
+- Fixed `403 Forbidden` error when setting voice status while disconnected (now uses join-set-leave blip).
+- Fixed a bug where saving server settings would clobber the timezone offset.
+- Fixed `NameError` in greeting logic due to missing imports.
+- Fixed player state clobbering where TTS notifications would overwrite prayer playback position.
+- Fixed 10-min pre-join test failure by updating mock clock and assertions.
+- Fixed potential TOCTOU race condition in TTS generation using post-await guards.
+
+### Dependencies
+- `edge-tts>=6.1.0`
+- `discord.py[voice]>=2.4.0`
+- `pytest>=7.0.0`
+- `httpx>=0.24.0`
+
+### [Previous Unreleased Changes]
 - Public view shows empty even when enabled schedules exist — now filters enabled schedules server-side before passing to template
 - `upsert_schedule` ON CONFLICT target now matches schema constraint (`guild_id, day_of_week, time_utc`) instead of referencing `prayer_type`
 - Test assertion in `test_routes.py` updated to match actual template output
-
-### Added
 - Guild name display on schedule and public pages (instead of raw ID)
 - Guild dropdown selector on schedule and public pages for multi-guild
 - `/servers` now the guild hub with per-guild "Schedule" and "Public View" links
@@ -23,41 +60,6 @@ All notable changes to the Discord Prayer Bot.
 - Timezone round-trip tests (18 tests, local→UTC→local invariance)
 - `USER_REQUIREMENTS.md` — functional & non-functional requirements
 - `.env.example` — template for environment variables
-
-### Changed
-- Voice behavior: bot joins 5 min before prayer, leaves 5 min after (not persistent)
-- Removed per-guild timezone offset from servers page (browser handles conversion)
-- Dashboard servers page now shows auto-discovered channel dropdowns
-- Admin prayer page seeds all 42 slots (6 prayers × 7 days) on first visit
-- Auth uses cookie (`prayer_session`) for form submissions
-- `bot/main.py` migrated from stub to full Discord bot (PrayerBot class)
-- UI redesigned with Tailwind CSS dark theme (matching discord-radio style)
-- All templates now extend `base.html` with consistent nav and styling
-- Controls routes (`/controls`, `/controls/volume`) return JSON for AJAX fetch
-
-### Fixed
-- `bot/player_framework.py` import: `bot.state` → `bot.state_framework`
-- `bot/prayer_scheduler.py`: `sched.time` → `sched.time_utc`
-- Missing modules: `bot/tracker.py`, `bot/milestones.py` ported from discord-radio
-- Missing `MILESTONES` constant in `db/models.py`
-- Missing `get_state`/`set_state`/`get_state_int`/`get_state_bool` on `Database`
-- DB migration: `time` → `time_utc` column rename for existing installs
-- Duplicate `require_auth` imports and unused `BotStateKey` import
-- Auth added to `/servers/update` endpoint
-- `discord.py[voice]` in requirements for voice support
-- `PYTHONPATH=/app` in docker-compose for module resolution
-- `ffmpeg` and `libopus0` installed in Docker image for audio playback
-- `voice_clients` name collision with `discord.Client` property
-- Voice connection timeout on production: missing `libopus0`, stale dashboard commands replayed on restart, missing `reconnect=True`/`timeout=30.0` matching discord-radio
-- Volume slider: now uses JS fetch for instant UI update (was form POST redirect showing stale value)
-- Volume range increased from 50–250 to 50–450
-- Duplicate skip/pause/resume buttons removed; now one per enabled guild with server name
-
-### Dependencies
-- `discord.py[voice]>=2.3.0`
-- `python-multipart>=0.0.6`
-- `pytz>=2023.0`
-- `ffmpeg` (system package in Docker)
 
 ## [0.1.0] — 2026-07-19
 

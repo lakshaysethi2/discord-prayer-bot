@@ -30,6 +30,19 @@ describe('Site Navigation', () => {
     cy.url().should('include', '/servers');
   });
 
+  it('should navigate to the health check endpoint', () => {
+    cy.request('/health').then((response) => {
+      expect(response.status).to.eq(200);
+      expect(response.body.status).to.eq('healthy');
+    });
+  });
+
+  it('should protect the history route redirecting to login', () => {
+    cy.visit(`/history/${GUILD_ID}`);
+    cy.url().should('include', '/login');
+    cy.contains('Admin Login').should('be.visible');
+  });
+
   it('should protect the admin prayers route redirecting to login', () => {
     cy.visit(`/prayers/${GUILD_ID}`);
     cy.url().should('include', '/login');

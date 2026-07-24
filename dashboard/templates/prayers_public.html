@@ -5,6 +5,12 @@
 <div class="text-center mb-6">
   <h1 class="text-2xl font-bold">🕌 {{ guild_name }}</h1>
   <p class="text-slate-400 text-sm">Prayer Schedule</p>
+  {% if is_live %}
+  <div class="mt-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-red-950/40 border border-red-800/60 text-red-400 text-xs font-bold uppercase tracking-widest animate-pulse">
+    <span class="w-2 h-2 rounded-full bg-red-500"></span>
+    Now Live
+  </div>
+  {% endif %}
 </div>
 
 {% if next_prayer %}
@@ -34,7 +40,19 @@
 </div>
 {% endif %}
 
-<div class="inline-block rounded-full bg-slate-800 px-4 py-1.5 text-xs text-slate-400 mb-6" id="tz-badge">🕐 detecting...</div>
+<div class="mb-6 flex flex-wrap items-center gap-3">
+  <div class="inline-block rounded-full bg-slate-800 px-4 py-1.5 text-xs text-slate-400" id="tz-badge-container">
+    <span>🕐 Perspective:</span>
+    <select id="tz-selector" onchange="updatePerspective(this.value)"
+            class="bg-transparent border-none text-slate-200 outline-none cursor-pointer">
+      <option value="local">Detecting...</option>
+      {% for tz in all_timezones %}
+      <option value="{{ tz }}">{{ tz }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <span id="tz-info" class="text-[10px] text-slate-600"></span>
+</div>
 
 {% set emojis = {"buddhist": "☸️", "christian": "✝️", "jewish": "✡️", "sufi": "☪️", "vedantic": "🕉️", "three_daily": "🌅"} %}
 
@@ -48,7 +66,7 @@
     <div class="flex-1 min-w-0">
       <div class="font-medium text-sm">{{ row.schedule.prayer_type.value | title }}</div>
       <div class="text-xs text-slate-400">
-        <span class="local-time">--:--</span>
+        <span class="local-time">{{ row.local_time_str }}</span>
         <span class="text-slate-600 ml-1">UTC {{ row.schedule.time_utc }}</span>
       </div>
     </div>
@@ -66,29 +84,45 @@
 {% endif %}
 
 <script>
-const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-const offset = -(new Date().getTimezoneOffset()) / 60;
-const sign = offset >= 0 ? '+' : '';
-document.getElementById('tz-badge').textContent = '🕐 ' + tz + ' (UTC' + sign + offset.toFixed(1) + 'h)';
+// Browser timezone for initial default
+const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+let currentTz = browserTz;
 
-function utcToLocal(utcTimeStr) {
-    const [h, m] = utcTimeStr.split(':').map(Number);
-    const d = new Date(Date.UTC(2024, 0, 1, h, m));
-    return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+// Populate "Detecting..." with actual name
+const localOpt = document.querySelector('#tz-selector option[value="local"]');
+if (localOpt) {
+  localOpt.textContent = 'Local: ' + browserTz;
+  localOpt.value = browserTz;
 }
+document.getElementById('tz-selector').value = browserTz;
 
-document.querySelectorAll('[data-utc-time]').forEach(card => {
-    card.querySelector('.local-time').textContent = utcToLocal(card.dataset.utcTime);
-});
-
-const nextEl = document.querySelector('.local-time-next');
-if (nextEl) {
+function updatePerspective(newTz) {
+  currentTz = newTz;
+  
+  // 1. Update upcoming prayer card
+  const nextEl = document.querySelector('.local-time-next');
+  if (nextEl) {
     const d = new Date(nextEl.dataset.iso);
-    const localTime = d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
-    const localDay = d.toLocaleDateString([], {weekday: 'long'});
-    const localDate = d.toLocaleDateString([], {day: 'numeric', month: 'short'});
-    const tzName = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    nextEl.innerHTML = localTime + ' · ' + localDay + ' ' + localDate + ' <span class="text-slate-500">' + tzName + '</span>';
+    const options = { timeZone: currentTz, hour: '2-digit', minute: '2-digit' };
+    const localTime = d.toLocaleTimeString('en-US', options);
+    const localDay = d.toLocaleDateString('en-US', { timeZone: currentTz, weekday: 'long' });
+    const localDate = d.toLocaleDateString('en-US', { timeZone: currentTz, day: 'numeric', month: 'short' });
+    nextEl.innerHTML = localTime + ' · ' + localDay + ' ' + localDate + ' <span class="text-slate-500">' + currentTz + '</span>';
+  }
+
+  // 2. Update schedule cards from their UTC source
+  document.querySelectorAll('[data-utc-time]').forEach(card => {
+    const [h, m] = card.dataset.utcTime.split(':').map(Number);
+    const d = new Date();
+    d.setUTCHours(h, m, 0, 0);
+    
+    // Display using selected timezone
+    const localStr = d.toLocaleTimeString('en-US', { timeZone: currentTz, hour12: false, hour: '2-digit', minute: '2-digit' });
+    card.querySelector('.local-time').textContent = localStr;
+  });
 }
+
+// Init
+updatePerspective(currentTz);
 </script>
 {% endblock %}

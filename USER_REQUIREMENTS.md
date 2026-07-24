@@ -8,30 +8,35 @@ A Discord bot that plays scheduled prayer audio (6 traditions: Buddhist, Christi
 ### FR-1: Prayer Scheduling
 - Admin sets weekly prayer times per guild via dashboard (browser local time, auto-converted to UTC)
 - Times stored as UTC (`time_utc`) in DB
-- Scheduler checks every 30 seconds, pre-joins voice 5 min before, plays at scheduled time
+- Scheduler checks every 30 seconds, pre-joins voice 10 min before, plays at scheduled time
 - Each prayer type maps to one of 6 MP3 files in `media/prayers/`
+- "Enable All" / "Disable All" bulk actions with smart time filling (00:00, 08:00, 16:00 UTC)
 
-### FR-2: Audio Playback
-- Bot joins voice on-demand (5 min before prayer, leaves 5 min after)
+### FR-2: Audio Playback & Voice Behavior
+- Bot joins voice on-demand (10 min before prayer, leaves 5 min after finishing)
 - Uses FFmpeg to play MP3 audio
 - Supports pause/resume/skip/volume via dashboard controls
-- Auto-pause when last listener leaves voice channel
-- Auto-resume when first listener joins
+- Auto-pause when last listener leaves voice channel; 5-min idle timeout disconnect
+- Auto-resume when first listener joins (if previously paused)
+- Guild-scoped BotState ensures complete isolation of playback position and volume between servers
 
 ### FR-3: Admin Dashboard
 - Web dashboard at `http://<host>:8700`
 - Cloudflare Tunnel: `https://prayer-bot-dnd.lak.nz`
 - Guild selector with server names (not raw IDs)
-- Weekly schedule editor (42 slots: 6 prayers × 7 days) with FullCalendar view
+- Weekly schedule editor with dual Save buttons (top/bottom)
+- Prayer History view showing the last 50 recitation events
 - Ad-hoc "Play Now" button for instant recitation
-- Volume slider (50%–450%) with JS fetch for instant UI update
-- Skip/pause/resume per guild (AJAX controls, no page reload)
-- Tailwind CSS dark theme (matching discord-radio style)
+- Volume slider (50%–750%) and live controls relocated to per-server Schedule page
+- Tailwind CSS dark theme
 
-### FR-4: Multi-Guild Support
-- Each Discord guild has independent schedule, voice/text channels
-- Shared bot instance serves all enabled guilds
-- Guild dropdown on schedule pages to switch context
+### FR-4: Discord Interaction (Slash Commands & TTS)
+- **Slash Commands**: `/start` (adhoc play) and `/exit` (stop/disconnect) - Admin only (`manage_guild`)
+- **TTS Greetings**: Bot greets users joining voice 10 min before prayer: *"Welcome [Name], thank you for coming, we will start the prayer in X minutes."* (5-second delay for connection stability)
+- **TTS Blessings**: Bot thanks users by name after prayer finishes: *"Thank you [Name A] and [Name B] for joining, god bless you."*
+- **Sequential Queue**: Greetings play one after another without audio overlaps
+- **Logging Channel**: Optional channel for bot event logs (joins, prayers, disconnects)
+- **Voice Status**: Bot sets VC status text and global activity countdown. The voice channel status update via 'blip' join is disabled by default and can be toggled by admins.
 
 ### FR-5: Public Schedule View
 - Unauthenticated view at `/prayers/public/{guild_id}`

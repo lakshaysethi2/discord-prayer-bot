@@ -28,9 +28,13 @@ describe('Public Prayer Schedule Page', () => {
     cy.contains(/in\s+\d+h?\s*\d*m/).should('be.visible');
   });
 
-  it('should display timezone detection badge', () => {
-    cy.get('#tz-badge').should('be.visible')
-      .and('contain', 'UTC');
+  it('should display perspective selector', () => {
+    cy.get('#tz-selector').should('be.visible');
+  });
+
+  it('should change perspective in public view', () => {
+    cy.get('#tz-selector').select('Asia/Tokyo');
+    cy.get('#tz-info').should('contain', 'UTC');
   });
 
   it('should render day-of-week headers for scheduled days', () => {

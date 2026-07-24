@@ -52,7 +52,11 @@ class BotState:
 
     @property
     def playback_position_seconds(self) -> int:
-        return self.db.get_state_int(BotStateKey.PLAYBACK_POSITION_SECONDS, 0)
+        v = self.get(BotStateKey.PLAYBACK_POSITION_SECONDS, "0")
+        try:
+            return int(v) if v else 0
+        except (TypeError, ValueError):
+            return 0
 
     @playback_position_seconds.setter
     def playback_position_seconds(self, value: int) -> None:
@@ -60,11 +64,23 @@ class BotState:
 
     @property
     def is_paused(self) -> bool:
-        return self.db.get_state_bool(BotStateKey.IS_PAUSED, False)
+        v = self.get(BotStateKey.IS_PAUSED, "False")
+        if v is None:
+            return False
+        return str(v).lower() in ("1", "true", "yes", "on")
 
     @is_paused.setter
     def is_paused(self, value: bool) -> None:
         self.set(BotStateKey.IS_PAUSED, bool(value))
+
+    @property
+    def is_connected(self) -> bool:
+        v = self.get(BotStateKey.IS_CONNECTED, "False")
+        return str(v).lower() in ("1", "true", "yes", "on")
+
+    @is_connected.setter
+    def is_connected(self, value: bool) -> None:
+        self.set(BotStateKey.IS_CONNECTED, bool(value))
 
     @property
     def now_playing_message_id(self) -> int | None:
@@ -82,7 +98,11 @@ class BotState:
 
     @property
     def playlist_position(self) -> int:
-        return self.db.get_state_int(BotStateKey.PLAYLIST_POSITION, 0)
+        v = self.get(BotStateKey.PLAYLIST_POSITION, "0")
+        try:
+            return int(v) if v else 0
+        except (TypeError, ValueError):
+            return 0
 
     @playlist_position.setter
     def playlist_position(self, value: int) -> None:
@@ -91,12 +111,16 @@ class BotState:
     @property
     def stream_volume_percent(self) -> int:
         """Persistent global FFmpeg gain, constrained to the admin UI range."""
-        value = self.db.get_state_int(BotStateKey.STREAM_VOLUME_PERCENT, 100)
-        return min(450, max(50, value))
+        v = self.get(BotStateKey.STREAM_VOLUME_PERCENT, "100")
+        try:
+            value = int(v) if v else 100
+        except (TypeError, ValueError):
+            value = 100
+        return min(750, max(50, value))
 
     @stream_volume_percent.setter
     def stream_volume_percent(self, value: int) -> None:
-        self.set(BotStateKey.STREAM_VOLUME_PERCENT, min(450, max(50, int(value))))
+        self.set(BotStateKey.STREAM_VOLUME_PERCENT, min(750, max(50, int(value))))
 
     @property
     def last_monthly_reset(self) -> str | None:
@@ -119,31 +143,28 @@ class BotState:
 
 
 class GuildScopedState(BotState):
-    """A BotState view scoped to one guild for the *Now Playing* message id.
+    """A BotState view scoped to one guild for all playback state.
 
-    The radio has a single shared playback cursor (current track, position,
-    volume, global pause flag), so those keys stay global. But each server
-    keeps its *own* Now Playing embed, so its saved message id must not
-    clobber the others'. This subclass overrides just that one key to be
-    per-guild while delegating everything else to the shared BotState.
+    The prayer bot has independent schedules per guild, so each server
+    keeps its own playback state (current track, position, paused flag)
+    plus its own Now Playing embed message id. This subclass scopes all
+    keys to the guild_id to avoid cross-server state clobbering.
     """
 
-    def __init__(self, db: Database, guild_id: str = "") -> None:
+    def __init__(self, db: Database, guild_id: str) -> None:
         super().__init__(db)
-        self._np_key = (
-            f"now_playing_message_id:{guild_id}" if guild_id else BotStateKey.NOW_PLAYING_MESSAGE_ID
-        )
+        if not guild_id:
+            raise ValueError("guild_id is required for GuildScopedState")
+        self.guild_id = guild_id
 
-    @property
-    def now_playing_message_id(self) -> int | None:
-        v = self.db.get_state(self._np_key)
-        if not v:
-            return None
-        try:
-            return int(v)
-        except ValueError:
-            return None
+    def get(self, key: str, default: str | None = None) -> str | None:
+        if key not in BOT_STATE_KEYS:
+            raise KeyError(f"unknown bot_state key {key!r}")
+        scoped_key = f"{key}:{self.guild_id}"
+        return self.db.get_state(scoped_key, default)
 
-    @now_playing_message_id.setter
-    def now_playing_message_id(self, value: int | None) -> None:
-        self.db.set_state(self._np_key, "" if value is None else int(value))
+    def set(self, key: str, value: str | int | float | bool | None) -> None:
+        if key not in BOT_STATE_KEYS:
+            raise KeyError(f"unknown bot_state key {key!r}")
+        scoped_key = f"{key}:{self.guild_id}"
+        self.db.set_state(scoped_key, value)
