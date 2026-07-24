@@ -164,6 +164,7 @@ class PrayerBot(discord.Client):
         cfg = get_guild_config(self.db, guild_id)
         if cfg is None or not cfg.enabled:
             log.info("Guild %s not enabled — skipping setup", guild_id)
+            # Stop existing scheduler if running to prevent duplicate loops
             old_scheduler = self.schedulers.pop(guild_id, None)
             if old_scheduler:
                 await old_scheduler.stop()
@@ -203,7 +204,7 @@ class PrayerBot(discord.Client):
         log.info("Guild %s set up (voice on-demand): voice=%s, text=%s",
                  guild_id, cfg.voice_channel_id, cfg.text_channel_id)
 
-    async def _ensure_voice_connected(self, guild_id: str) -> discord.VoiceClient | None:
+    async def _ensure_voice_connected(self, guild_id: str, is_blip: bool = False) -> discord.VoiceClient | None:
         """Join the configured voice channel if not already connected. Returns the VC."""
         cfg = get_guild_config(self.db, guild_id)
         if cfg is None or not cfg.voice_channel_id:
@@ -235,8 +236,15 @@ class PrayerBot(discord.Client):
 
         if existing and existing.is_connected():
             if existing.channel and str(existing.channel.id) == str(cfg.voice_channel_id):
+                # Update connection state in case it was stale in DB
+                if not is_blip:
+                    scoped_state = GuildScopedState(self.db, guild_id)
+                    scoped_state.is_connected = True
                 return existing
             await existing.move_to(voice_channel)
+            if not is_blip:
+                scoped_state = GuildScopedState(self.db, guild_id)
+                scoped_state.is_connected = True
             return existing
 
         try:
@@ -258,16 +266,21 @@ class PrayerBot(discord.Client):
             self.voice_connections[guild_id] = vc
             log.info("Joined voice in guild %s for prayer", guild_id)
             
-            # Greet people already in the room
-            listeners = [m.display_name for m in voice_channel.members if not m.bot]
-            if listeners:
-                if len(listeners) == 1:
-                    names = listeners[0]
-                elif len(listeners) == 2:
-                    names = f"{listeners[0]} and {listeners[1]}"
-                else:
-                    names = "everyone"
-                asyncio.create_task(self._say_tts(guild_id, f"Welcome {names}, thank you for joining."))
+            # Persist connection state (only if not a status blip)
+            if not is_blip:
+                scoped_state = GuildScopedState(self.db, guild_id)
+                scoped_state.is_connected = True
+            
+                # Greet people already in the room
+                listeners = [m.display_name for m in voice_channel.members if not m.bot]
+                if listeners:
+                    if len(listeners) == 1:
+                        names = listeners[0]
+                    elif len(listeners) == 2:
+                        names = f"{listeners[0]} and {listeners[1]}"
+                    else:
+                        names = "everyone"
+                    asyncio.create_task(self._say_tts(guild_id, f"Welcome {names}, thank you for joining."))
                 
             return vc
         except Exception as exc:
