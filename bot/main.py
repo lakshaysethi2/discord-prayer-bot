@@ -164,12 +164,20 @@ class PrayerBot(discord.Client):
         cfg = get_guild_config(self.db, guild_id)
         if cfg is None or not cfg.enabled:
             log.info("Guild %s not enabled — skipping setup", guild_id)
+            old_scheduler = self.schedulers.pop(guild_id, None)
+            if old_scheduler:
+                await old_scheduler.stop()
             return
 
         guild = self.get_guild(int(guild_id))
         if guild is None:
             log.warning("Guild %s not found in connected guilds", guild_id)
             return
+
+        # Stop existing scheduler if running to prevent duplicate loops
+        old_scheduler = self.schedulers.pop(guild_id, None)
+        if old_scheduler:
+            await old_scheduler.stop()
 
         # Log bot permissions for troubleshooting
         self._log_permissions(guild, cfg.voice_channel_id)
@@ -216,10 +224,15 @@ class PrayerBot(discord.Client):
             self.voice_connections.pop(guild_id, None)
             existing = None
         # Prefer guild.voice_client if already live and connected
-        if existing is None and guild.voice_client and guild.voice_client.is_connected():
-            existing = guild.voice_client
-            self.voice_connections[guild_id] = existing
-            
+        if existing is None and guild.voice_client:
+            if guild.voice_client.is_connected():
+                existing = guild.voice_client
+                self.voice_connections[guild_id] = existing
+            else:
+                # Force cleanup of stale VoiceClient instance to prevent connect() failure
+                with contextlib.suppress(Exception):
+                    await guild.voice_client.disconnect(force=True)
+
         if existing and existing.is_connected():
             if existing.channel and str(existing.channel.id) == str(cfg.voice_channel_id):
                 return existing
@@ -230,6 +243,9 @@ class PrayerBot(discord.Client):
             vc = None
             for attempt in range(1, 4):
                 try:
+                    if guild.voice_client and not guild.voice_client.is_connected():
+                        with contextlib.suppress(Exception):
+                            await guild.voice_client.disconnect(force=True)
                     vc = await voice_channel.connect(reconnect=True, timeout=30.0)
                     break
                 except Exception as exc:
@@ -970,8 +986,8 @@ class PrayerBot(discord.Client):
                         status = f"Next prayer starts in ~{mins}m"
                 
                 # Official Voice Status Requirement: Bot MUST be in the channel
-                vc_conn = self.voice_connections.get(guild_id)
-                if vc_conn and vc_conn.is_connected() and vc_conn.channel.id == voice_channel.id:
+                vc_conn = self.voice_connections.get(guild_id) or guild.voice_client
+                if vc_conn and vc_conn.is_connected() and vc_conn.channel and str(vc_conn.channel.id) == str(voice_channel.id):
                     try:
                         # Small buffer to ensure API is ready
                         await asyncio.sleep(1)
@@ -980,8 +996,9 @@ class PrayerBot(discord.Client):
                     except Exception as exc:
                         log.debug("Official VC status update failed: %s", exc)
                 elif not vc_conn or not vc_conn.is_connected():
-                    # Temporarily join to set status if feature is enabled
-                    if cfg.status_blip_enabled:
+                    # Temporarily join to set status if feature is enabled and bot is not connected
+                    is_connected = (guild.voice_client and guild.voice_client.is_connected()) or (vc_conn and vc_conn.is_connected())
+                    if cfg.status_blip_enabled and not is_connected:
                         try:
                             temp_vc = await voice_channel.connect(timeout=10.0, reconnect=False)
                             # Wait 2 seconds after joining for Discord to recognize the presence
@@ -993,7 +1010,7 @@ class PrayerBot(discord.Client):
                         except Exception as exc:
                             log.debug("Temporary join/status blip failed in guild %s: %s", guild_id, exc)
                     else:
-                        log.debug("Skipping status blip for guild %s (feature disabled)", guild_id)
+                        log.debug("Skipping status blip for guild %s (feature disabled or bot connected)", guild_id)
 
             except Exception as exc:
                 log.warning("Unexpected error updating status for guild %s: %s", guild_id, exc)

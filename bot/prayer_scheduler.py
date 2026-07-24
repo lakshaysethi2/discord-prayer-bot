@@ -104,8 +104,12 @@ class PrayerScheduler:
                 except Exception as exc:
                     log.exception("Pre-join failed: %s", exc)
 
-            # Exact match: play now
-            if sched.day_of_week == weekday and sched.time_utc == current_time and play_key not in self._played:
+            # Match logic: play now if current day matches and current time is at or slightly past sched.time_utc (up to 2 minutes window)
+            sched_mins = sched.time_utc.hour * 60 + sched.time_utc.minute
+            curr_mins = current_time.hour * 60 + current_time.minute
+            time_diff = (curr_mins - sched_mins) % 1440
+
+            if sched.day_of_week == weekday and 0 <= time_diff <= 2 and play_key not in self._played:
                 self._played.add(play_key)
                 filename = get_audio_filename(sched.prayer_type)
                 success = await self.play_prayer(
