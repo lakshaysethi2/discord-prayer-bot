@@ -118,6 +118,30 @@ def test_watchdog_runs_in_loop():
         assert len(watchdog_calls) == 1
 
 
+def test_watchdog_noop_when_connected():
+    """Watchdog should not call play_prayer when bot is already in voice."""
+    with Database(":memory:") as db:
+        guild_id = "test_guild_noop"
+        sched_id = upsert_schedule(db, guild_id, 0, PrayerType.CHRISTIAN, time(12, 0), enabled=True)
+
+        played_calls = []
+
+        async def mock_play(g_id, p_type, filename):
+            played_calls.append((g_id, p_type, filename))
+            return True
+
+        scheduler = PrayerScheduler(db, mock_play, guild_id)
+        scheduler.is_voice_connected = lambda g_id: True
+
+        prayer_key = f"0:{PrayerType.CHRISTIAN.value}"
+        scheduler._active_prayers[prayer_key] = datetime.now(timezone.utc)
+
+        asyncio.get_event_loop().run_until_complete(scheduler._watchdog_check())
+
+        assert len(played_calls) == 0
+        assert prayer_key in scheduler._active_prayers
+
+
 def test_active_prayer_added_on_play():
     """Prayer should be added to _active_prayers when play fires."""
     with Database(":memory:") as db:
