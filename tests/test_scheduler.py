@@ -82,3 +82,36 @@ def test_watchdog_expires_stale_prayers():
         assert len(played_calls) == 0
         # Should have cleaned up the expired entry
         assert prayer_key not in scheduler._active_prayers
+
+
+def test_watchdog_runs_in_loop():
+    """_watchdog_check should be called on every loop tick."""
+    with Database(":memory:") as db:
+        guild_id = "test_guild_loop"
+        sched_id = upsert_schedule(db, guild_id, 0, PrayerType.CHRISTIAN, time(12, 0), enabled=True)
+        assert sched_id > 0
+
+        async def mock_play(g_id, p_type, filename):
+            return True
+
+        scheduler = PrayerScheduler(db, mock_play, guild_id)
+        scheduler.is_voice_connected = lambda g_id: True
+
+        watchdog_calls = []
+        original_watchdog = scheduler._watchdog_check
+
+        async def tracked_watchdog():
+            watchdog_calls.append(True)
+            await original_watchdog()
+
+        scheduler._watchdog_check = tracked_watchdog
+
+        # Run one tick manually
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(scheduler._check_and_play())
+            loop.run_until_complete(scheduler._watchdog_check())
+        finally:
+            loop.close()
+
+        assert len(watchdog_calls) == 1
