@@ -12,6 +12,7 @@ All notable changes to the Discord Prayer Bot.
 ### Added
 - Watchdog check in PrayerScheduler: monitors voice connection during active prayers and auto-rejoins if missing
 - `_active_prayers` tracking on PrayerScheduler for active prayer lifecycle management
+- Active prayer tracking in `_check_and_play`: populates `_active_prayers` when `play_prayer()` fires at exact time
 - Loop integration test verifying watchdog runs on every scheduler tick
 - Guild name display on schedule and public pages (instead of raw ID)
 - Guild dropdown selector on schedule and public pages for multi-guild

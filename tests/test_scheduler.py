@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, time, timezone, timedelta
+from unittest.mock import patch
 from db.database import Database
 from db.models import PrayerType
 from db.prayers import upsert_schedule, get_audio_filename
@@ -115,3 +116,27 @@ def test_watchdog_runs_in_loop():
             loop.close()
 
         assert len(watchdog_calls) == 1
+
+
+def test_active_prayer_added_on_play():
+    """Prayer should be added to _active_prayers when play fires."""
+    with Database(":memory:") as db:
+        guild_id = "test_guild_active"
+        sched_id = upsert_schedule(db, guild_id, 0, PrayerType.CHRISTIAN, time(12, 0), enabled=True)
+
+        async def mock_play(g_id, p_type, filename):
+            return True
+
+        scheduler = PrayerScheduler(db, mock_play, guild_id)
+        scheduler.is_voice_connected = lambda g_id: True
+
+        # Patch datetime to simulate exact prayer time
+        with patch('bot.prayer_scheduler.datetime') as mock_dt:
+            mock_now = datetime(2025, 1, 6, 12, 0, 0)  # Monday = day_of_week 0
+            mock_dt.now.return_value = mock_now
+            mock_dt.side_effect = lambda *a, **k: datetime(*a, **k)
+
+            asyncio.get_event_loop().run_until_complete(scheduler._check_and_play())
+
+        prayer_key = f"0:{PrayerType.CHRISTIAN.value}"
+        assert prayer_key in scheduler._active_prayers

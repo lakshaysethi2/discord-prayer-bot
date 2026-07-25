@@ -107,6 +107,8 @@ class PrayerScheduler:
                     self.db, self.guild_id, sched.id, sched.prayer_type, success
                 )
                 log.info("Played %s for guild %s", sched.prayer_type, self.guild_id)
+                # Track as active prayer for watchdog monitoring
+                self._active_prayers[pre_key] = now
                 # Clear pre-join marker after playing
                 self._pre_joined.discard(pre_key)
 
