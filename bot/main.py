@@ -143,6 +143,8 @@ class PrayerBot(discord.Client):
         )
         # Wire up pre-join: 5 min before prayer, ensure voice is connected
         scheduler.on_pre_prayer = self._on_pre_prayer
+        # Wire watchdog callback
+        scheduler.is_voice_connected = self._is_voice_connected
         self.schedulers[guild_id] = scheduler
         await scheduler.start()
 
@@ -216,13 +218,28 @@ class PrayerBot(discord.Client):
             log.debug("Cancelled pending disconnect task for guild %s", guild_id)
 
     def _make_schedule_disconnect(self, guild_id: str):
-        """Return a callback that schedules disconnect 5 min after playback finishes."""
+        """Return a callback that schedules disconnect 5 min after playback finishes
+        and clears active prayer tracking."""
         async def _on_finish(player, track):
             # Cancel any existing disconnect task for safety, then start a new one
             self._cancel_disconnect_task(guild_id)
             task = asyncio.create_task(self._disconnect_voice_after_delay(guild_id, 300))
             self._disconnect_tasks[guild_id] = task
+            # Clear active prayer tracking for this guild
+            scheduler = self.schedulers.get(guild_id)
+            if scheduler:
+                scheduler._active_prayers.clear()
         return _on_finish
+
+    def _is_voice_connected(self, guild_id: str) -> bool:
+        """Check if bot is currently connected to voice for this guild."""
+        vc = self.voice_connections.get(guild_id)
+        if vc is None:
+            return False
+        if not vc.is_connected():
+            self.voice_connections.pop(guild_id, None)
+            return False
+        return True
 
     async def _on_pre_prayer(self, guild_id: str) -> None:
         """Called 5 min before scheduled prayer — join voice early."""
