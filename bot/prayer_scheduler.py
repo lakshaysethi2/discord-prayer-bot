@@ -32,6 +32,8 @@ class PrayerScheduler:
         self.timezone = pytz.utc
         self.on_pre_prayer: Callable[[str], Awaitable[None]] | None = None
         self._pre_joined: set[str] = set()  # track which (day, prayer) we already pre-joined for
+        self._active_prayers: dict[str, datetime] = {}  # prayer_key -> start_time (UTC)
+        self.is_voice_connected: Callable[[str], bool] | None = None
         self._task: asyncio.Task | None = None
         self._running = False
 
@@ -54,6 +56,7 @@ class PrayerScheduler:
         while self._running:
             try:
                 await self._check_and_play()
+                await self._watchdog_check()
             except Exception as exc:
                 log.exception("Prayer scheduler error: %s", exc)
             await asyncio.sleep(30)  # check every 30s for 5-min pre-join precision
@@ -106,3 +109,30 @@ class PrayerScheduler:
                 log.info("Played %s for guild %s", sched.prayer_type, self.guild_id)
                 # Clear pre-join marker after playing
                 self._pre_joined.discard(pre_key)
+
+    async def _watchdog_check(self):
+        """Check if bot is in voice for active prayers; rejoin if missing."""
+        now = datetime.now(self.timezone)
+        expired_keys = []
+
+        for prayer_key, start_time in self._active_prayers.items():
+            elapsed = now - start_time
+            if elapsed.total_seconds() > 600:  # 10 min max window
+                expired_keys.append(prayer_key)
+                continue
+
+            if self.is_voice_connected and not self.is_voice_connected(self.guild_id):
+                log.info("Watchdog: bot not in voice for %s in guild %s, rejoining",
+                         prayer_key, self.guild_id)
+                # Parse prayer_type from key (format: "day_of_week:prayer_type_value")
+                parts = prayer_key.split(":", 1)
+                if len(parts) == 2:
+                    try:
+                        p_type = PrayerType(parts[1])
+                        filename = get_audio_filename(p_type)
+                        await self.play_prayer(self.guild_id, p_type, filename)
+                    except Exception as exc:
+                        log.exception("Watchdog rejoin failed for %s: %s", prayer_key, exc)
+
+        for key in expired_keys:
+            self._active_prayers.pop(key, None)

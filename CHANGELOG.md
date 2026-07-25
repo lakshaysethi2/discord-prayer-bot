@@ -10,6 +10,8 @@ All notable changes to the Discord Prayer Bot.
 - Test assertion in `test_routes.py` updated to match actual template output
 
 ### Added
+- Watchdog check in PrayerScheduler: monitors voice connection during active prayers and auto-rejoins if missing
+- `_active_prayers` tracking on PrayerScheduler for active prayer lifecycle management
 - Guild name display on schedule and public pages (instead of raw ID)
 - Guild dropdown selector on schedule and public pages for multi-guild
 - `/servers` now the guild hub with per-guild "Schedule" and "Public View" links
