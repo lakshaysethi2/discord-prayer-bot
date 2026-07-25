@@ -12,6 +12,8 @@ from db.models import PrayerType
 
 log = logging.getLogger(__name__)
 
+WATCHDOG_MAX_WINDOW_SECONDS = 600  # 10 minutes
+
 
 class PrayerScheduler:
     """Checks every 30 seconds for prayers that should play now or soon.
@@ -117,9 +119,9 @@ class PrayerScheduler:
         now = datetime.now(self.timezone)
         expired_keys = []
 
-        for prayer_key, start_time in self._active_prayers.items():
+        for prayer_key, start_time in list(self._active_prayers.items()):
             elapsed = now - start_time
-            if elapsed.total_seconds() > 600:  # 10 min max window
+            if elapsed.total_seconds() > WATCHDOG_MAX_WINDOW_SECONDS:
                 expired_keys.append(prayer_key)
                 continue
 
