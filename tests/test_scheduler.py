@@ -51,7 +51,7 @@ def test_watchdog_reconnects_when_not_in_voice():
         scheduler._active_prayers[prayer_key] = datetime.now(timezone.utc) - timedelta(minutes=1)
 
         # Run watchdog check
-        asyncio.get_event_loop().run_until_complete(scheduler._watchdog_check())
+        asyncio.run(scheduler._watchdog_check())
 
         # play_prayer should have been called by watchdog
         assert len(played_calls) == 1
@@ -77,7 +77,7 @@ def test_watchdog_expires_stale_prayers():
         prayer_key = f"0:{PrayerType.CHRISTIAN.value}"
         scheduler._active_prayers[prayer_key] = datetime.now(timezone.utc) - timedelta(minutes=15)
 
-        asyncio.get_event_loop().run_until_complete(scheduler._watchdog_check())
+        asyncio.run(scheduler._watchdog_check())
 
         # Should NOT have called play_prayer (expired)
         assert len(played_calls) == 0
@@ -136,7 +136,7 @@ def test_watchdog_noop_when_connected():
         prayer_key = f"0:{PrayerType.CHRISTIAN.value}"
         scheduler._active_prayers[prayer_key] = datetime.now(timezone.utc)
 
-        asyncio.get_event_loop().run_until_complete(scheduler._watchdog_check())
+        asyncio.run(scheduler._watchdog_check())
 
         assert len(played_calls) == 0
         assert prayer_key in scheduler._active_prayers
@@ -160,7 +160,7 @@ def test_active_prayer_added_on_play():
             mock_dt.now.return_value = mock_now
             mock_dt.side_effect = lambda *a, **k: datetime(*a, **k)
 
-            asyncio.get_event_loop().run_until_complete(scheduler._check_and_play())
+            asyncio.run(scheduler._check_and_play())
 
         prayer_key = f"0:{PrayerType.CHRISTIAN.value}"
         assert prayer_key in scheduler._active_prayers
