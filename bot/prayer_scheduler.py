@@ -88,8 +88,8 @@ class PrayerScheduler:
                 microsecond=0
             ) + timedelta(days=days_ahead)
             
-            pre_key = f"{prayer_dt.date().isoformat()}:{sched.day_of_week}:{sched.prayer_type.value}"
-            play_key = f"{today_str}:{sched.day_of_week}:{sched.prayer_type.value}"
+            pre_key = f"{prayer_dt.date().isoformat()}:{sched.day_of_week}:{sched.prayer_type.value}:{sched.time_utc}"
+            play_key = f"{today_str}:{sched.day_of_week}:{sched.prayer_type.value}:{sched.time_utc}"
 
             # Pre-join logic: Trigger if the prayer is starting within the next pre_join_mins minutes
             # but has not started yet.

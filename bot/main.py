@@ -1057,7 +1057,6 @@ class PrayerBot(discord.Client):
             discord.app_commands.Choice(name="Vedantic", value="vedantic"),
             discord.app_commands.Choice(name="Three Daily", value="three_daily"),
         ])
-        @discord.app_commands.default_permissions(manage_guild=True)
         @discord.app_commands.guild_only()
         async def start_prayer(interaction: discord.Interaction, prayer_type: str):
             guild_id = str(interaction.guild_id)
@@ -1144,6 +1143,7 @@ class PrayerBot(discord.Client):
             embed.add_field(
                 name="📖 Public Commands",
                 value=(
+                    "`/start [tradition]` - Trigger an immediate adhoc prayer\n"
                     "`/next` - See when the next prayer is scheduled (Ephemeral)\n"
                     "`/help` - Show this help message"
                 ),
@@ -1153,7 +1153,6 @@ class PrayerBot(discord.Client):
             embed.add_field(
                 name="🛡️ Admin Commands (Manage Server required)",
                 value=(
-                    "`/start [tradition]` - Trigger an immediate adhoc prayer\n"
                     "`/exit` - Stop playback and make the bot leave voice"
                 ),
                 inline=False

@@ -59,7 +59,7 @@ def test_scheduler_pre_join():
                 await scheduler._check_and_play()
             assert len(played_calls) == 1
             # In the new design, pre-join marker persists until midnight
-            assert "2024-01-01:0:christian" in scheduler._pre_joined
+            assert "2024-01-01:0:christian:12:05:00" in scheduler._pre_joined
             
             # Ensure _played guard works: second T-0 tick doesn't re-play
             with patch('bot.prayer_scheduler.datetime') as mock_datetime:
