@@ -1,8 +1,9 @@
-"""Health endpoint for uptime monitoring (Gatus/Prometheus-friendly).
+"""Health/freshness helpers shared by the dashboard `/health` endpoint.
 
-GET /health returns JSON:
+The endpoint returns:
 {
-  "status": "ok" | "degraded",
+  "status": "healthy" | "degraded" | "unhealthy",
+  "database": "connected" | "disconnected",
   "last_prayer_played_utc": "2026-07-31 07:00:05" | null,
   "hours_since_last_prayer": 7.4,
   "expected_max_gap_hours": 32.0,
@@ -17,14 +18,9 @@ don't cause false alarms.
 
 from __future__ import annotations
 
-import os
 from datetime import datetime, timezone
 
-from fastapi import APIRouter
-
 from db.database import Database
-
-router = APIRouter()
 
 _STALE_BUFFER_HOURS = 1.0
 
@@ -40,7 +36,7 @@ def _parse_db_ts(value: str) -> datetime | None:
         return None
 
 
-def _max_schedule_gap_hours(db: Database) -> float | None:
+def max_schedule_gap_hours(db: Database) -> float | None:
     """Longest gap between consecutive enabled prayer slots (wrapping weekly).
 
     Returns None when there are no enabled schedules for any enabled guild.
@@ -74,34 +70,31 @@ def _max_schedule_gap_hours(db: Database) -> float | None:
     return max(gaps) / 60.0
 
 
-@router.get("/health")
-def health() -> dict:
-    db = Database()
-    try:
-        row = db.fetchone(
-            "SELECT MAX(played_at) AS last_played FROM prayer_logs WHERE success = 1"
+def compute_health(db: Database) -> dict:
+    """Compute prayer freshness based on the last successful play + schedule."""
+    row = db.fetchone(
+        "SELECT MAX(played_at) AS last_played FROM prayer_logs WHERE success = 1"
+    )
+    last_raw = row["last_played"] if row else None
+    last_dt = _parse_db_ts(last_raw)
+    now = _now_utc()
+    hours_since = (now - last_dt).total_seconds() / 3600.0 if last_dt else None
+
+    max_gap = max_schedule_gap_hours(db)
+    if max_gap is None:
+        stale = bool(last_dt is not None and hours_since is not None and hours_since > 48.0)
+    else:
+        stale = bool(
+            last_dt is not None
+            and hours_since is not None
+            and hours_since > (max_gap + _STALE_BUFFER_HOURS)
         )
-        last_raw = row["last_played"] if row else None
-        last_dt = _parse_db_ts(last_raw)
-        now = _now_utc()
-        hours_since = (now - last_dt).total_seconds() / 3600.0 if last_dt else None
 
-        max_gap = _max_schedule_gap_hours(db)
-        if max_gap is None:
-            stale = bool(last_dt is not None and hours_since is not None and hours_since > 48.0)
-        else:
-            stale = bool(
-                last_dt is not None
-                and hours_since is not None
-                and hours_since > (max_gap + _STALE_BUFFER_HOURS)
-            )
-
-        return {
-            "status": "degraded" if stale else "ok",
-            "last_prayer_played_utc": last_raw,
-            "hours_since_last_prayer": round(hours_since, 2) if hours_since is not None else None,
-            "expected_max_gap_hours": round(max_gap, 2) if max_gap is not None else None,
-            "stale": stale,
-        }
-    finally:
-        db.close()
+    return {
+        "status": "degraded" if stale else "healthy",
+        "database": "connected",
+        "last_prayer_played_utc": last_raw,
+        "hours_since_last_prayer": round(hours_since, 2) if hours_since is not None else None,
+        "expected_max_gap_hours": round(max_gap, 2) if max_gap is not None else None,
+        "stale": stale,
+    }

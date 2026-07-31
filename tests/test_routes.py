@@ -55,8 +55,8 @@ def test_admin_and_public_routes(monkeypatch):
 
 
 def test_health_endpoint_stale_detection(tmp_path):
-    """/health returns ok with fresh plays and degraded when prayers stop."""
-    from dashboard.health import health as health_fn
+    """/health returns healthy with fresh plays and degraded when prayers stop."""
+    from dashboard.health import compute_health
     from db.prayers import upsert_schedule, log_prayer_played
     from db.models import PrayerType
     from datetime import time as dtime
@@ -74,18 +74,13 @@ def test_health_endpoint_stale_detection(tmp_path):
 
         # Fresh play -> not stale
         log_prayer_played(db, "g_health", 1, PrayerType.BUDDHIST, True)
-        import os
-        os.environ["DATABASE_PATH"] = db_path
-        try:
-            body = health_fn()
-            assert body["status"] == "ok"
-            assert body["stale"] is False
-            assert body["expected_max_gap_hours"] == 32.0  # Sat 16:00 -> Mon 00:00
+        body = compute_health(db)
+        assert body["status"] == "healthy"
+        assert body["stale"] is False
+        assert body["expected_max_gap_hours"] == 32.0  # Sat 16:00 -> Mon 00:00
 
-            # Age all plays -> stale
-            db.execute("UPDATE prayer_logs SET played_at = datetime('now','-3 days')")
-            body = health_fn()
-            assert body["status"] == "degraded"
-            assert body["stale"] is True
-        finally:
-            os.environ.pop("DATABASE_PATH", None)
+        # Age all plays -> stale
+        db.execute("UPDATE prayer_logs SET played_at = datetime('now','-3 days')")
+        body = compute_health(db)
+        assert body["status"] == "degraded"
+        assert body["stale"] is True
