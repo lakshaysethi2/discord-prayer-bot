@@ -52,3 +52,40 @@ def test_admin_and_public_routes(monkeypatch):
         assert response_post.status_code == 303
 
         app.dependency_overrides.clear()
+
+
+def test_health_endpoint_stale_detection(tmp_path):
+    """/health returns ok with fresh plays and degraded when prayers stop."""
+    from dashboard.health import health as health_fn
+    from db.prayers import upsert_schedule, log_prayer_played
+    from db.models import PrayerType
+    from datetime import time as dtime
+
+    db_path = str(tmp_path / "health.db")
+    with Database(db_path) as db:
+        # Enabled guild + enabled schedule (3 slots/day Mon-Sat, none Sunday)
+        db.execute(
+            "INSERT INTO guild_configs (guild_id, guild_name, enabled) VALUES (?, ?, 1)",
+            ("g_health", "Health Guild"),
+        )
+        for day in range(6):
+            for hh in (0, 7, 16):
+                upsert_schedule(db, "g_health", day, PrayerType.BUDDHIST, dtime(hh, 0))
+
+        # Fresh play -> not stale
+        log_prayer_played(db, "g_health", 1, PrayerType.BUDDHIST, True)
+        import os
+        os.environ["DATABASE_PATH"] = db_path
+        try:
+            body = health_fn()
+            assert body["status"] == "ok"
+            assert body["stale"] is False
+            assert body["expected_max_gap_hours"] == 32.0  # Sat 16:00 -> Mon 00:00
+
+            # Age all plays -> stale
+            db.execute("UPDATE prayer_logs SET played_at = datetime('now','-3 days')")
+            body = health_fn()
+            assert body["status"] == "degraded"
+            assert body["stale"] is True
+        finally:
+            os.environ.pop("DATABASE_PATH", None)

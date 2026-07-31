@@ -10,6 +10,7 @@ All notable changes to the Discord Prayer Bot.
 - Test assertion in `test_routes.py` updated to match actual template output
 
 ### Added
+- `dashboard/health.py` — `/health` endpoint exposing prayer freshness for uptime monitoring (Gatus). Computes `stale` from the enabled schedule's max gap, so days without scheduled prayers (e.g. Sunday) don't false-alarm.
 - Guild name display on schedule and public pages (instead of raw ID)
 - Guild dropdown selector on schedule and public pages for multi-guild
 - `/servers` now the guild hub with per-guild "Schedule" and "Public View" links
