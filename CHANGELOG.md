@@ -48,6 +48,13 @@ All notable changes to the Discord Prayer Bot.
 - Public view shows empty even when enabled schedules exist — now filters enabled schedules server-side before passing to template
 - `upsert_schedule` ON CONFLICT target now matches schema constraint (`guild_id, day_of_week, time_utc`) instead of referencing `prayer_type`
 - Test assertion in `test_routes.py` updated to match actual template output
+
+
+### Added
+- Watchdog check in PrayerScheduler: monitors voice connection during active prayers and auto-rejoins if missing
+- `_active_prayers` tracking on PrayerScheduler for active prayer lifecycle management
+- Active prayer tracking in `_check_and_play`: populates `_active_prayers` when `play_prayer()` fires at exact time
+- Loop integration test verifying watchdog runs on every scheduler tick
 - Guild name display on schedule and public pages (instead of raw ID)
 - Guild dropdown selector on schedule and public pages for multi-guild
 - `/servers` now the guild hub with per-guild "Schedule" and "Public View" links
