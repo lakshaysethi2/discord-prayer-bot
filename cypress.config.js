@@ -15,7 +15,7 @@ module.exports = defineConfig({
     },
     env: {
       ADMIN_TOKEN: process.env.CYPRESS_ADMIN_TOKEN || 'dev-token-change-me',
-      GUILD_ID: '1194598173742731284',
+      GUILD_ID: process.env.CYPRESS_GUILD_ID || process.env.GUILD_ID || '',
     },
   },
 });

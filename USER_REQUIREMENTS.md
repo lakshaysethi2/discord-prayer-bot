@@ -73,7 +73,7 @@ make down          # Stop services
 
 ## Cypress E2E Tests
 - Live site: `https://prayer-bot-dnd.lak.nz`
-- Guild ID under test: `1194598173742731284`
+- Guild ID under test: `$GUILD_ID (set in env)`
 - Requires valid `ADMIN_TOKEN` in `.env` for admin schedule save tests
 - Run with: `make test-e2e` (uses `cypress/included` Docker image, no local Node required)
 - Spec files:
