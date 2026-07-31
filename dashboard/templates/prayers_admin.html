@@ -19,15 +19,61 @@
           class="text-xs rounded bg-red-900/50 hover:bg-red-800/50 border border-red-800/50 px-2 py-1 text-red-300" title="Make bot leave voice channel">🚪 Leave Voice</button>
 </div>
 
-<div class="text-xs text-slate-500 mb-4">🕐 <span id="tz-info">detecting...</span> — all times in your local timezone</div>
+<div class="text-xs text-slate-500 mb-4 flex items-center gap-2">
+  <span>🕐 Local Timezone:</span>
+  <select id="tz-selector" name="timezone_name" form="schedule-form" onchange="updatePerspective(this.value)"
+          class="bg-slate-800 border border-slate-700 rounded px-2 py-0.5 text-xs text-slate-300 outline-none focus:border-indigo-500">
+    <option value="local">Detecting...</option>
+    {% for tz in all_timezones %}
+    <option value="{{ tz }}">{{ tz }}</option>
+    {% endfor %}
+  </select>
+  <span id="tz-info" class="text-slate-600"></span>
+</div>
 {% set flash_msg = request.query_params.get('flash', '') %}
 {% if flash_msg %}
 <div id="flash-msg" class="mb-4 rounded bg-emerald-900/40 border border-emerald-700 px-3 py-2 text-sm text-emerald-200">{{ flash_msg }}</div>
 {% endif %}
 <div id="feedback" class="hidden rounded px-3 py-2 text-sm mb-3"></div>
 
+<div class="mt-2 mb-6 rounded-lg bg-slate-900 border border-slate-800 p-4">
+  <h2 class="font-semibold mb-3 text-sm text-slate-300">🎛️ Live Controls & Volume</h2>
+
+  <div class="flex flex-wrap items-center gap-4 mb-4">
+    <div class="flex items-center gap-2">
+      <span class="text-xs text-slate-400">Volume:</span>
+      <strong id="volume-display" class="text-sm text-indigo-400">{{ current_volume }}%</strong>
+    </div>
+    <input type="range" id="volume-slider" min="50" max="750" value="{{ current_volume }}"
+           oninput="document.getElementById('volume-label').textContent=this.value+'%'"
+           class="w-full sm:w-48 h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer">
+    <span id="volume-label" class="text-xs text-slate-500 w-10">{{ current_volume }}%</span>
+    <button type="button" onclick="setVolume('{{ guild_id }}')"
+            class="rounded bg-indigo-600 hover:bg-indigo-500 px-3 py-1 text-xs font-medium transition-colors">Apply Volume</button>
+  </div>
+
+  <div class="flex flex-wrap gap-2 pt-2 border-t border-slate-800/50">
+    <button onclick="sendControl('{{ guild_id }}', 'pause')"
+            class="flex-1 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 py-2 text-xs transition-colors">⏸ Pause</button>
+    <button onclick="sendControl('{{ guild_id }}', 'resume')"
+            class="flex-1 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 py-2 text-xs transition-colors">▶ Resume</button>
+    <button onclick="sendControl('{{ guild_id }}', 'skip')"
+            class="flex-1 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 py-2 text-xs transition-colors">⏭ Skip</button>
+  </div>
+</div>
+
 <form method="post" action="/prayers/save" id="schedule-form">
   <input type="hidden" name="guild_id" value="{{ guild_id }}">
+
+  <div class="flex items-center justify-between gap-2 mb-4">
+    <div class="flex gap-2">
+      <button type="button" onclick="bulkAction('enable_all')"
+              class="text-[10px] rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 px-2 py-1 text-slate-300 transition-colors">✅ Enable All</button>
+      <button type="button" onclick="bulkAction('disable_all')"
+              class="text-[10px] rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 px-2 py-1 text-slate-300 transition-colors">❌ Disable All</button>
+    </div>
+    <button type="submit" class="rounded bg-indigo-600 hover:bg-indigo-500 px-4 py-1.5 text-xs font-medium transition-colors">Save Schedule</button>
+  </div>
 
   {% set days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] %}
   {% set prayer_types = ["buddhist", "christian", "jewish", "sufi", "vedantic", "three_daily"] %}
@@ -66,27 +112,41 @@
 </form>
 
 <script>
-const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-const off = -(new Date().getTimezoneOffset()) / 60;
-document.getElementById('tz-info').textContent = tz + ' (UTC' + (off>=0?'+':'') + off.toFixed(1) + 'h)';
+// Browser timezone for initial default
+const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+let currentTz = browserTz;
 
-// Init: UTC → local
-document.querySelectorAll('.time-inp').forEach(inp => {
-  if (!inp.dataset.utc) return;
-  const [h,m] = inp.dataset.utc.split(':').map(Number);
-  const d = new Date(); d.setUTCHours(h, m, 0, 0);
-  inp.value = String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
-});
+// Populate "Detecting..." with actual name
+const localOpt = document.querySelector('#tz-selector option[value="local"]');
+if (localOpt) {
+  localOpt.textContent = 'Local: ' + browserTz;
+  localOpt.value = browserTz;
+}
+document.getElementById('tz-selector').value = browserTz;
 
-// Submit: local → UTC (same reference date as init, so conversions are exact inverses)
-document.getElementById('schedule-form').addEventListener('submit', function(e) {
-  e.preventDefault();
+function updatePerspective(newTz) {
+  currentTz = newTz;
+  
+  // Re-render all inputs from their UTC source using client-side display only
+  // The official "save" now happens server-side for DST accuracy
   document.querySelectorAll('.time-inp').forEach(inp => {
-    if (!inp.value) return;
-    const [h,m] = inp.value.split(':').map(Number);
-    const d = new Date(); d.setHours(h, m, 0, 0);
-    inp.value = String(d.getUTCHours()).padStart(2,'0') + ':' + String(d.getUTCMinutes()).padStart(2,'0');
+    if (!inp.dataset.utc) return;
+    const [h,m] = inp.dataset.utc.split(':').map(Number);
+    const d = new Date();
+    d.setUTCHours(h, m, 0, 0);
+    
+    // Display using browser/selected timezone
+    const localStr = d.toLocaleTimeString('en-US', { timeZone: currentTz, hour12: false, hour: '2-digit', minute: '2-digit' });
+    inp.value = localStr;
   });
+}
+
+// Init
+updatePerspective(currentTz);
+
+// Submit: simply send the local values, server handles UTC conversion based on timezone_name
+document.getElementById('schedule-form').addEventListener('submit', function(e) {
+  // No client-side conversion needed anymore
   this.submit();
 });
 
@@ -124,6 +184,72 @@ async function leaveVoice(guildId) {
     fb.className = 'rounded bg-red-900/40 border border-red-700 px-3 py-2 text-sm text-red-200 mb-3';
   }
   setTimeout(() => fb.className = 'hidden', 3000);
+}
+
+async function bulkAction(action) {
+  const fb = document.getElementById('feedback');
+  const guildId = document.querySelector('input[name="guild_id"]').value;
+  try {
+    const r = await fetch('/prayers/bulk-action', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      body: new URLSearchParams({guild_id: guildId, action: action})
+    });
+    const data = await r.json();
+    if (data.ok) {
+      window.location.reload();
+    } else {
+      throw new Error(data.msg);
+    }
+  } catch(e) {
+    fb.textContent = '❌ Action failed: ' + e.message;
+    fb.className = 'rounded bg-red-900/40 border border-red-700 px-3 py-2 text-sm text-red-200 mb-3';
+    fb.classList.remove('hidden');
+  }
+}
+
+async function setVolume(guildId) {
+  const slider = document.getElementById('volume-slider');
+  const display = document.getElementById('volume-display');
+  const vol = slider.value;
+  const fb = document.getElementById('feedback');
+  display.textContent = vol + '%';
+  try {
+    const r = await fetch('/controls/volume', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      body: new URLSearchParams({guild_id: guildId, volume_percent: vol})
+    });
+    const data = await r.json();
+    fb.textContent = '✅ Volume set to ' + vol + '%';
+    fb.className = 'rounded bg-emerald-900/40 border border-emerald-700 px-3 py-2 text-sm text-emerald-200 mb-3';
+    fb.classList.remove('hidden');
+    setTimeout(() => fb.classList.add('hidden'), 2000);
+  } catch(e) { 
+    console.error(e); 
+    fb.textContent = '❌ Failed to set volume';
+    fb.className = 'rounded bg-red-900/40 border border-red-700 px-3 py-2 text-sm text-red-200 mb-3';
+    fb.classList.remove('hidden');
+  }
+}
+
+async function sendControl(guildId, action) {
+  const fb = document.getElementById('feedback');
+  try {
+    const r = await fetch('/controls', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      body: new URLSearchParams({guild_id: guildId, action: action})
+    });
+    fb.textContent = '✅ ' + action.toUpperCase() + ' sent';
+    fb.className = 'rounded bg-emerald-900/40 border border-emerald-700 px-3 py-2 text-sm text-emerald-200 mb-3';
+    fb.classList.remove('hidden');
+    setTimeout(() => fb.classList.add('hidden'), 2000);
+  } catch(e) {
+    fb.textContent = '❌ ' + action.toUpperCase() + ' failed';
+    fb.className = 'rounded bg-red-900/40 border border-red-700 px-3 py-2 text-sm text-red-200 mb-3';
+    fb.classList.remove('hidden');
+  }
 }
 </script>
 {% endblock %}

@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block title %}History · Prayer Bot{% endblock %}
+
+{% block content %}
+<div class="flex items-center justify-between mb-4 flex-wrap gap-2">
+  <div class="flex items-center gap-3">
+    <h1 class="text-xl font-semibold">Activity History: {{ guild_name }}</h1>
+  </div>
+  <a href="/prayers/{{ guild_id }}" class="text-xs text-slate-400 hover:text-white">📅 Back to Schedule</a>
+</div>
+
+<div class="text-xs text-slate-500 mb-4 italic">🕐 Showing times in your local timezone</div>
+
+<div class="space-y-8">
+  <!-- Prayer Recitation History -->
+  <section>
+    <h2 class="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-3">🙏 Prayer Recitations (Last 10)</h2>
+    <div class="rounded-lg bg-slate-900 border border-slate-800 overflow-hidden">
+      <table class="w-full text-left text-sm">
+        <thead>
+          <tr class="bg-slate-800/50 text-slate-400 border-b border-slate-800">
+            <th class="px-4 py-3 font-medium">Time</th>
+            <th class="px-4 py-3 font-medium">Prayer Type</th>
+            <th class="px-4 py-3 font-medium text-center">Status</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-800/50">
+          {% for log in prayer_logs %}
+          <tr class="hover:bg-slate-800/20 transition-colors">
+            <td class="px-4 py-3 text-slate-300 time-utc" data-utc="{{ log.played_at }}">{{ log.played_at }}</td>
+            <td class="px-4 py-3 text-slate-300">{{ log.prayer_type.title() }}</td>
+            <td class="px-4 py-3 text-center">
+              {% if log.success %}
+                <span class="inline-flex items-center rounded-full bg-emerald-900/30 px-2 py-0.5 text-xs font-medium text-emerald-400">Success</span>
+              {% else %}
+                <span class="inline-flex items-center rounded-full bg-red-900/30 px-2 py-0.5 text-xs font-medium text-red-400">Failed</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="3" class="px-4 py-8 text-center text-slate-500">No prayer logs found yet.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Voice Session History -->
+  <section>
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="text-sm font-semibold text-slate-400 uppercase tracking-wider">🎙️ Voice Room Activity</h2>
+      
+      <div class="flex items-center gap-2">
+        <label for="user-filter" class="text-xs text-slate-500">Filter:</label>
+        <select id="user-filter" onchange="filterUser(this.value)" 
+                class="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200 outline-none focus:border-indigo-500">
+          <option value="">All Users</option>
+          {% for user in users %}
+          <option value="{{ user.user_id }}" {% if selected_user == user.user_id %}selected{% endif %}>{{ user.username }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+
+    <div class="rounded-lg bg-slate-900 border border-slate-800 overflow-hidden">
+      <table class="w-full text-left text-sm">
+        <thead>
+          <tr class="bg-slate-800/50 text-slate-400 border-b border-slate-800">
+            <th class="px-4 py-3 font-medium">User</th>
+            <th class="px-4 py-3 font-medium">Joined</th>
+            <th class="px-4 py-3 font-medium">Left</th>
+            <th class="px-4 py-3 font-medium text-right">Duration</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-800/50">
+          {% for log in voice_logs %}
+          <tr class="hover:bg-slate-800/20 transition-colors">
+            <td class="px-4 py-3">
+              <div class="text-slate-300 font-medium">{{ log.username }}</div>
+              <div class="text-slate-500 text-[10px]">ID: {{ log.user_id }}</div>
+            </td>
+            <td class="px-4 py-3 text-slate-400 time-utc" data-utc="{{ log.joined_at }}">{{ log.joined_at }}</td>
+            <td class="px-4 py-3 text-slate-400">
+              {% if log.left_at %}
+                <span class="time-utc" data-utc="{{ log.left_at }}">{{ log.left_at }}</span>
+              {% else %}
+                <span class="text-emerald-500 font-medium animate-pulse">Online</span>
+              {% endif %}
+            </td>
+            <td class="px-4 py-3 text-right text-slate-300">
+              {% if log.duration_seconds %}
+                {{ (log.duration_seconds / 60) | int }}m {{ log.duration_seconds % 60 }}s
+              {% else %}
+                —
+              {% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="4" class="px-4 py-8 text-center text-slate-500">No voice activity logged yet.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+
+<script>
+function filterUser(userId) {
+  const url = new URL(window.location);
+  if (userId) {
+    url.searchParams.set('user_id', userId);
+  } else {
+    url.searchParams.delete('user_id');
+  }
+  window.location.href = url.toString();
+}
+
+// UTC → local conversion
+document.querySelectorAll('.time-utc').forEach(el => {
+  const utcStr = el.dataset.utc;
+  if (!utcStr) return;
+  
+  // SQLite format is typically YYYY-MM-DD HH:MM:SS
+  // Append Z to treat as UTC for JavaScript Date parser
+  const date = new Date(utcStr.replace(' ', 'T') + 'Z');
+  
+  if (!isNaN(date.getTime())) {
+    el.textContent = date.toLocaleDateString([], {month:'short', day:'numeric'}) + ' ' + 
+                     date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+  }
+});
+</script>
+{% endblock %}

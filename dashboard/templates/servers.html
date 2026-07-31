@@ -62,11 +62,53 @@
             {% endfor %}
           </select>
         </label>
+
+        <label class="text-sm">
+          <span class="block text-slate-400 mb-1">Bot Voice (TTS)</span>
+          <select name="tts_voice"
+                  class="w-full rounded bg-slate-800 border border-slate-700 px-2 py-1.5 text-slate-100">
+            <option value="en-US-GuyNeural" {{ "selected" if s.tts_voice == "en-US-GuyNeural" else "" }}>Male (Guy)</option>
+            <option value="en-US-AriaNeural" {{ "selected" if s.tts_voice == "en-US-AriaNeural" else "" }}>Female (Aria)</option>
+            <option value="en-GB-SoniaNeural" {{ "selected" if s.tts_voice == "en-GB-SoniaNeural" else "" }}>British (Sonia)</option>
+          </select>
+        </label>
+
+        <label class="text-sm">
+          <span class="block text-slate-400 mb-1">Logging channel</span>
+          <select name="logging_channel_id"
+                  class="w-full rounded bg-slate-800 border border-slate-700 px-2 py-1.5 text-slate-100">
+            <option value="">— none —</option>
+            {% for tc in s.text_channels %}
+              <option value="{{ tc.channel_id }}" {{ "selected" if s.logging_channel_id == tc.channel_id else "" }}>
+                {{ tc.channel_name }}
+              </option>
+            {% endfor %}
+          </select>
+        </label>
+
+        <label class="text-sm">
+          <span class="block text-slate-400 mb-1">Pre-join (minutes)</span>
+          <input type="number" name="pre_join_minutes" value="{{ s.pre_join_minutes }}" min="0" max="60"
+                 class="w-full rounded bg-slate-800 border border-slate-700 px-2 py-1.5 text-slate-100">
+        </label>
+
+        <label class="text-sm">
+          <span class="block text-slate-400 mb-1">Post-stay (minutes)</span>
+          <input type="number" name="post_stay_minutes" value="{{ s.post_stay_minutes }}" min="0" max="60"
+                 class="w-full rounded bg-slate-800 border border-slate-700 px-2 py-1.5 text-slate-100">
+        </label>
+
+        <label class="flex items-center gap-2 text-sm cursor-pointer select-none mt-4">
+          <input type="checkbox" name="status_blip_enabled" value="on" {{ "checked" if s.status_blip_enabled else "" }}
+                 class="h-4 w-4 rounded border-slate-600 bg-slate-800">
+          <span class="text-slate-300">Enable Voice Status Blip (Updates countdown every minute)</span>
+        </label>
       </div>
 
       <div class="mt-3 flex items-center justify-between">
         <div class="flex gap-2 text-xs">
           <a href="/prayers/{{ s.guild_id }}" class="text-indigo-400 hover:text-indigo-300">📅 Schedule</a>
+          <a href="/history/{{ s.guild_id }}" class="text-slate-400 hover:text-slate-300">📜 History</a>
           <a href="/prayers/public/{{ s.guild_id }}" class="text-slate-400 hover:text-slate-300">👁 Public</a>
         </div>
         <button type="submit"
@@ -78,61 +120,7 @@
   {% endfor %}
 </div>
 
-{% if servers %}
-<div class="mt-6 rounded-lg bg-slate-900 border border-slate-800 p-4">
-  <h2 class="font-semibold mb-3">🎛️ Playback Controls</h2>
-
-  <div class="flex flex-wrap items-center gap-4 mb-3">
-    <div class="flex items-center gap-2">
-      <span class="text-sm text-slate-400">Volume:</span>
-      <strong id="volume-display" class="text-sm">{{ current_volume }}%</strong>
-    </div>
-    <input type="hidden" id="volume-guild-id" value="{{ servers[0].guild_id }}">
-    <input type="range" id="volume-slider" min="50" max="450" value="{{ current_volume }}"
-           oninput="document.getElementById('volume-label').textContent=this.value+'%'"
-           class="w-32">
-    <span id="volume-label" class="text-sm text-slate-400">{{ current_volume }}%</span>
-    <button type="button" onclick="setVolume()"
-            class="rounded bg-indigo-600 hover:bg-indigo-500 px-3 py-1 text-sm">
-      Set Volume
-    </button>
-  </div>
-
-  <div class="flex flex-wrap gap-2">
-    {% for s in servers if s.enabled %}
-    <div class="flex items-center gap-1">
-      <span class="text-xs text-slate-500 mr-1">{{ s.guild_name[:12] }}</span>
-      <button onclick="sendControl('{{ s.guild_id }}', 'skip')"
-              class="rounded bg-slate-800 hover:bg-slate-700 px-2 py-1 text-xs">⏭</button>
-      <button onclick="sendControl('{{ s.guild_id }}', 'pause')"
-              class="rounded bg-slate-800 hover:bg-slate-700 px-2 py-1 text-xs">⏸</button>
-      <button onclick="sendControl('{{ s.guild_id }}', 'resume')"
-              class="rounded bg-slate-800 hover:bg-slate-700 px-2 py-1 text-xs">▶</button>
-      <button onclick="sendControl('{{ s.guild_id }}', 'disconnect')"
-              class="rounded bg-red-900/50 hover:bg-red-800/50 border border-red-800/50 px-2 py-1 text-xs" title="Leave voice channel">🚪</button>
-    </div>
-    {% endfor %}
-  </div>
-  <p id="control-feedback" class="text-xs text-emerald-400 mt-2 hidden"></p>
-</div>
-{% endif %}
-
 <script>
-async function setVolume() {
-  const slider = document.getElementById('volume-slider');
-  const display = document.getElementById('volume-display');
-  const guildId = document.getElementById('volume-guild-id').value;
-  const vol = slider.value;
-  display.textContent = vol + '%';
-  try {
-    await fetch('/controls/volume', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-      body: new URLSearchParams({guild_id: guildId, volume_percent: vol})
-    });
-  } catch(e) { console.error(e); }
-}
-
 async function sendControl(guildId, action) {
   const fb = document.getElementById('control-feedback');
   try {

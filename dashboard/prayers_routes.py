@@ -13,6 +13,7 @@ from __future__ import annotations
 import contextlib
 import hmac
 import os
+import pytz
 from datetime import datetime, time, timedelta
 
 from fastapi import APIRouter, Request, Form, Depends, Query
@@ -33,6 +34,76 @@ from dashboard.auth import require_auth
 
 router = APIRouter()
 templates = Jinja2Templates(directory="dashboard/templates")
+
+
+def get_db():
+    db = Database()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+@router.get("/health")
+async def health_check(db: Database = Depends(get_db)):
+    """Health check for Docker/Kubernetes."""
+    try:
+        # Check DB connectivity
+        db.fetchone("SELECT 1")
+        return JSONResponse({"status": "healthy", "database": "connected"})
+    except Exception as exc:
+        return JSONResponse(
+            {"status": "unhealthy", "database": "disconnected", "error": str(exc)},
+            status_code=500
+        )
+
+
+@router.get("/history/{guild_id}", response_class=HTMLResponse)
+async def prayer_history(
+    request: Request,
+    guild_id: str,
+    user_id: str | None = Query(None),
+    db: Database = Depends(get_db),
+):
+    require_auth(request)
+    cfg = get_guild_config(db, guild_id)
+    
+    # Get recent prayer logs (Only last 10)
+    prayer_rows = db.fetchall(
+        "SELECT * FROM prayer_logs WHERE guild_id=? ORDER BY played_at DESC LIMIT 10",
+        (guild_id,)
+    )
+    
+    # Base query for voice logs
+    voice_query = "SELECT * FROM voice_session_logs WHERE guild_id=?"
+    params = [guild_id]
+    
+    if user_id:
+        voice_query += " AND user_id=?"
+        params.append(user_id)
+    
+    voice_query += " ORDER BY joined_at DESC LIMIT 50"
+    voice_rows = db.fetchall(voice_query, tuple(params))
+    
+    # Get unique users for the filter dropdown
+    users = db.fetchall(
+        "SELECT DISTINCT user_id, username FROM voice_session_logs WHERE guild_id=? ORDER BY username ASC",
+        (guild_id,)
+    )
+    
+    return templates.TemplateResponse(
+        request,
+        "history.html",
+        {
+            "request": request,
+            "guild_id": guild_id,
+            "guild_name": cfg.guild_name if cfg else guild_id,
+            "prayer_logs": prayer_rows,
+            "voice_logs": voice_rows,
+            "users": users,
+            "selected_user": user_id,
+        },
+    )
 
 
 # ------------------------------------------------------------------ root
@@ -80,16 +151,6 @@ async def login(request: Request):
     return response
 
 
-def get_db():
-    db = Database()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
-# ------------------------------------------------------------------ helpers
-
 def _format_time_local(t_utc: time, offset_hours: float) -> str:
     """Convert UTC `time` to local time string using per-guild offset."""
     # For display purposes: shift by offset_hours (simple arithmetic)
@@ -134,6 +195,15 @@ async def prayers_admin(
     guild_rows = db.fetchall("SELECT guild_id, guild_name FROM guild_configs ORDER BY guild_name, guild_id")
     all_guilds = [{"guild_id": r["guild_id"], "name": r["guild_name"] or r["guild_id"]} for r in guild_rows]
     current_guild_name = cfg.guild_name if cfg else guild_id
+    
+    # Get common timezones for dropdown
+    import pytz
+    all_timezones = pytz.common_timezones
+
+    # Get current volume for this guild
+    from bot.state_framework import GuildScopedState
+    scoped_state = GuildScopedState(db, guild_id)
+    current_volume = scoped_state.stream_volume_percent
 
     return templates.TemplateResponse(
         request,
@@ -143,6 +213,8 @@ async def prayers_admin(
             "guild_name": current_guild_name,
             "all_guilds": all_guilds,
             "schedules": existing,
+            "current_volume": current_volume,
+            "all_timezones": all_timezones,
             "get_audio_filename": get_audio_filename,
         },
     )
@@ -152,43 +224,57 @@ async def prayers_admin(
 async def save_prayers(
     request: Request,
     guild_id: str = Form(...),
+    timezone_name: str = Form("UTC"),
     db: Database = Depends(get_db),
 ):
     require_auth(request)
     form_data = await request.form()
     schedules = get_weekly_schedule(db, guild_id)
 
+    # Convert and save schedules
+    import pytz
+    tz = pytz.timezone(timezone_name)
+    now = datetime.now() # Current date to determine correct DST offset
+    
     # Validate: no duplicate times per day
     seen: dict[str, set[str]] = {}  # day_idx -> set of times
     for s in schedules:
-        time_str = form_data.get(f"time_{s.id}")
-        if not time_str:
+        local_time_str = form_data.get(f"time_{s.id}")
+        if not local_time_str:
             continue
+        
+        # Local to UTC conversion using server-side Python
+        try:
+            local_t = time.fromisoformat(local_time_str)
+            local_dt = tz.localize(datetime.combine(now.date(), local_t))
+            utc_dt = local_dt.astimezone(pytz.UTC)
+            utc_t_str = utc_dt.time().isoformat()
+        except Exception:
+            continue
+
         day = str(s.day_of_week)
         if day not in seen:
             seen[day] = set()
-        if time_str in seen[day]:
+        if utc_t_str in seen[day]:
             import urllib.parse
-            msg = urllib.parse.quote("Duplicate times on same day — each slot must have a unique time")
+            msg = urllib.parse.quote("Duplicate times on same day")
             return RedirectResponse(f"/prayers/{guild_id}?flash={msg}", status_code=303)
-        seen[day].add(time_str)
+        seen[day].add(utc_t_str)
 
     for s in schedules:
-        time_str = form_data.get(f"time_{s.id}")
+        local_time_str = form_data.get(f"time_{s.id}")
         prayer_str = form_data.get(f"prayer_{s.id}", "")
         enabled_val = f"enabled_{s.id}" in form_data
-        if time_str:
+        
+        if local_time_str:
             try:
-                # Accept both plain 'HH:MM' and full ISO timestamps '2024-01-01T02:00:00.000Z'
-                if 'T' in time_str:
-                    # ISO timestamp - extract UTC time portion only
-                    clean = time_str.replace('Z', '+00:00')
-                    dt = datetime.fromisoformat(clean)
-                    t = dt.time()
-                else:
-                    t = time.fromisoformat(time_str)
+                # Local to UTC conversion
+                local_t = time.fromisoformat(local_time_str)
+                local_dt = tz.localize(datetime.combine(now.date(), local_t))
+                utc_dt = local_dt.astimezone(pytz.UTC)
+                t = utc_dt.time()
+                
                 if prayer_str:
-                    # Update prayer_type too
                     try:
                         pt = PrayerType(prayer_str)
                         db.execute(
@@ -198,12 +284,9 @@ async def save_prayers(
                     except ValueError:
                         update_schedule(db, s.id, t, enabled_val)
                 else:
-                    # prayer_str is empty, prayer_type is NOT NULL — keep existing
                     update_schedule(db, s.id, t, enabled_val)
-            except ValueError:
+            except Exception:
                 pass
-        elif enabled_val and not time_str:
-            pass  # enabled but no time — skip
 
     # Enqueue live apply
     from dashboard.commands import enqueue
@@ -251,6 +334,69 @@ async def adhoc_play_by_id(
     return JSONResponse({"ok": True, "msg": "Queued"})
 
 
+@router.post("/prayers/bulk-action")
+async def bulk_action(
+    request: Request,
+    guild_id: str = Form(...),
+    action: str = Form(...),
+    db: Database = Depends(get_db),
+):
+    require_auth(request)
+    if action == "enable_all":
+        # Get existing schedules to preserve them, or create new ones
+        # Use placeholders for times: 00:00, 08:00, 16:00
+        default_times = [time(0, 0), time(8, 0), time(16, 0)]
+        for day in range(7):
+            # Fetch current schedules for this day to avoid collisions
+            day_schedules = db.fetchall(
+                "SELECT id, time_utc, prayer_type FROM prayer_schedules WHERE guild_id=? AND day_of_week=? ORDER BY id ASC",
+                (guild_id, day)
+            )
+            existing_times = {s["time_utc"][:5] for s in day_schedules} # Set of "HH:MM"
+            
+            # 1. Update/Enable existing rows
+            for s in day_schedules:
+                sid = s["id"]
+                t_str = s["time_utc"]
+                # If it's a placeholder (00:01-00:03), try to set it to a default time
+                # but only if that default time isn't already taken by another row
+                if t_str[:5] in ("00:01", "00:02", "00:03"):
+                    for dt in default_times:
+                        dt_str = dt.strftime("%H:%M")
+                        if dt_str not in existing_times:
+                            db.execute("UPDATE prayer_schedules SET enabled=1, time_utc=? WHERE id=?", 
+                                       (dt.isoformat(), sid))
+                            existing_times.remove(t_str[:5])
+                            existing_times.add(dt_str)
+                            break
+                    else:
+                        # No default time available, just enable the placeholder
+                        db.execute("UPDATE prayer_schedules SET enabled=1 WHERE id=?", (sid,))
+                else:
+                    # Not a placeholder, just enable it
+                    db.execute("UPDATE prayer_schedules SET enabled=1 WHERE id=?", (sid,))
+
+            # 2. Add new default rows if we have fewer than 3 total enabled slots
+            current_count = len(day_schedules)
+            if current_count < 3:
+                for dt in default_times:
+                    if len(day_schedules) >= 3:
+                        break
+                    dt_str = dt.strftime("%H:%M")
+                    if dt_str not in existing_times:
+                        upsert_schedule(db, guild_id, day, PrayerType.BUDDHIST, dt, enabled=True)
+                        existing_times.add(dt_str)
+                        # We re-fetch or just increment to track count
+                        day_schedules.append({"dummy": True}) 
+
+    elif action == "disable_all":
+        db.execute("UPDATE prayer_schedules SET enabled=0 WHERE guild_id=?", (guild_id,))
+    
+    from dashboard.commands import enqueue
+    enqueue(db, command="apply_server", requested_by="admin", payload={"guild_id": guild_id})
+    return JSONResponse({"ok": True})
+
+
 # ------------------------------------------------------------------ public
 @router.get("/prayers/public/{guild_id}", response_class=HTMLResponse)
 async def prayers_public(
@@ -265,8 +411,10 @@ async def prayers_public(
     guild_rows = db.fetchall("SELECT guild_id, guild_name FROM guild_configs ORDER BY guild_name, guild_id")
     all_guilds = [{"guild_id": r["guild_id"], "name": r["guild_name"] or r["guild_id"]} for r in guild_rows]
     current_guild_name = cfg.guild_name if cfg else guild_id
+    current_tz = cfg.timezone_name if cfg and cfg.timezone_name else "UTC"
 
     # Build rows (browser handles UTC → local conversion)
+    
     # Filter enabled schedules and organize by day for the template
     enabled_schedules = [s for s in schedules if s.enabled]
     days_list = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
@@ -280,9 +428,13 @@ async def prayers_public(
             })
 
     # Compute next upcoming prayer
-    import pytz
-    from datetime import datetime, timedelta
     utc_now = datetime.now(pytz.UTC)
+    
+    # Check if live (connected to voice)
+    from bot.state_framework import GuildScopedState
+    scoped_state = GuildScopedState(db, guild_id)
+    is_live = scoped_state.is_connected
+
     current_weekday = utc_now.weekday()  # 0=Mon
     current_time = utc_now.time().replace(second=0, microsecond=0)
     next_prayer = None
@@ -311,6 +463,9 @@ async def prayers_public(
                 "in_hours": hours,
                 "in_minutes": minutes,
             }
+    
+    # Get common timezones for dropdown
+    all_timezones = pytz.common_timezones
 
     return templates.TemplateResponse(
         request,
@@ -321,6 +476,8 @@ async def prayers_public(
             "all_guilds": all_guilds,
             "schedules_by_day": schedules_by_day,
             "next_prayer": next_prayer,
+            "all_timezones": all_timezones,
+            "is_live": is_live,
             "voice_channel_id": cfg.voice_channel_id if cfg else "",
         },
     )
@@ -342,24 +499,29 @@ async def servers_page(
         cfg = get_guild_config(db, gid)
         channels = get_guild_channels(db, gid)
         voice_channels = [c for c in channels if c.channel_type == "voice"]
-        text_channels = [c for c in channels if c.channel_type == "text"]
+        # Allow both text channels and voice channels (for built-in text chat)
+        text_channels = [c for c in channels if c.channel_type in ("text", "voice")]
         servers.append({
             "guild_id": gid,
             "guild_name": r["guild_name"] or gid,
             "enabled": cfg.enabled if cfg else False,
             "voice_channel_id": cfg.voice_channel_id if cfg else None,
             "text_channel_id": cfg.text_channel_id if cfg else None,
+            "logging_channel_id": cfg.logging_channel_id if cfg else None,
+            "tts_voice": cfg.tts_voice if cfg else "en-US-GuyNeural",
+            "pre_join_minutes": cfg.pre_join_minutes if cfg else 10,
+            "post_stay_minutes": cfg.post_stay_minutes if cfg else 5,
+            "status_blip_enabled": cfg.status_blip_enabled if cfg else False,
             "voice_channels": voice_channels,
             "text_channels": text_channels,
         })
-    # Current volume from bot_state
-    current_volume = db.get_state_int("stream_volume_percent", 100)
+    # Current volume from bot_state (read from first guild if possible, else global)
+    # TODO: Make the volume slider per-server in the UI to support multi-guild settings properly
     return templates.TemplateResponse(
         request,
         "servers.html",
         {
             "servers": servers,
-            "current_volume": current_volume,
         },
     )
 
@@ -371,17 +533,34 @@ async def servers_update(
     enabled: str = Form("off"),
     voice_channel_id: str = Form(""),
     text_channel_id: str = Form(""),
+    logging_channel_id: str = Form(""),
+    tts_voice: str = Form("en-US-GuyNeural"),
+    pre_join_minutes: int = Form(10),
+    post_stay_minutes: int = Form(5),
+    status_blip_enabled: str = Form("off"),
     db: Database = Depends(get_db),
 ):
     require_auth(request)
+    VALID_TTS_VOICES = {"en-US-GuyNeural", "en-US-AriaNeural", "en-GB-SoniaNeural"}
+    if tts_voice not in VALID_TTS_VOICES:
+        tts_voice = "en-US-GuyNeural"
+
     cfg = get_guild_config(db, guild_id)
     wants_enabled = enabled == "on"
+    blip_enabled = status_blip_enabled == "on"
     apply_guild_config(
         db,
         guild_id,
         enabled=wants_enabled,
         voice_channel_id=voice_channel_id or None,
         text_channel_id=text_channel_id or None,
+        logging_channel_id=logging_channel_id or None,
+        timezone_offset_hours=cfg.timezone_offset_hours if cfg else 0.0,
+        timezone_name=cfg.timezone_name if cfg else "UTC",
+        tts_voice=tts_voice,
+        pre_join_minutes=pre_join_minutes,
+        post_stay_minutes=post_stay_minutes,
+        status_blip_enabled=blip_enabled,
     )
     # Enqueue live apply (no restart) — task 3 / 4
     from dashboard.commands import enqueue
@@ -422,7 +601,7 @@ async def set_volume(
 ):
     require_auth(request)
     from dashboard.commands import enqueue
-    vol = min(450, max(50, int(volume_percent)))
+    vol = min(750, max(50, int(volume_percent)))
     enqueue(db, command="set_volume", requested_by="admin", payload={
         "guild_id": guild_id,
         "volume_percent": vol,

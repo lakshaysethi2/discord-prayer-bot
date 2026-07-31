@@ -112,7 +112,13 @@ SCHEMA: tuple[str, ...] = (
         enabled           BOOLEAN DEFAULT 0,
         voice_channel_id  TEXT,
         text_channel_id   TEXT,
+        logging_channel_id TEXT,
         timezone_offset_hours REAL DEFAULT 0.0,
+        timezone_name     TEXT DEFAULT 'UTC',
+        tts_voice         TEXT DEFAULT 'en-US-GuyNeural',
+        pre_join_minutes  INTEGER DEFAULT 10,
+        post_stay_minutes INTEGER DEFAULT 5,
+        status_blip_enabled BOOLEAN DEFAULT 0,
         updated_at        DATETIME
     )
     """,
@@ -150,6 +156,19 @@ SCHEMA: tuple[str, ...] = (
         prayer_type TEXT NOT NULL,
         success INTEGER NOT NULL DEFAULT 0,
         FOREIGN KEY(schedule_id) REFERENCES prayer_schedules(id) ON DELETE CASCADE
+    )
+    """,
+    # ---- voice_session_logs (who joined when) ------------------------------
+    """
+    CREATE TABLE IF NOT EXISTS voice_session_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        guild_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        username TEXT NOT NULL,
+        channel_id TEXT NOT NULL,
+        joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        left_at TIMESTAMP,
+        duration_seconds INTEGER
     )
     """,
 )
@@ -206,7 +225,13 @@ class GuildConfig:
     enabled: bool
     voice_channel_id: str | None
     text_channel_id: str | None
+    logging_channel_id: str | None = None
     timezone_offset_hours: float = 0.0
+    timezone_name: str = "UTC"
+    tts_voice: str = "en-US-GuyNeural"
+    pre_join_minutes: int = 10
+    post_stay_minutes: int = 5
+    status_blip_enabled: bool = False
     updated_at: str | None = None
 
 
@@ -232,6 +257,7 @@ class BotStateKey:
     LAST_MONTHLY_RESET = "last_monthly_reset"
     STREAM_VOLUME_PERCENT = "stream_volume_percent"
     ARCHIVE_ORG_ITEMS = "archive_org_items"
+    IS_CONNECTED = "is_connected"
 
 
 BOT_STATE_KEYS: frozenset[str] = frozenset(
