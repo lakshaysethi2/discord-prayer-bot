@@ -78,14 +78,14 @@ test-cov: env
 # E2E Cypress tests against the live site
 test-e2e:
 	CYPRESS_ADMIN_TOKEN=$${ADMIN_TOKEN:-dev-token-change-me} \
-	$(COMPOSE) --profile e2e run --rm cypress cypress run --config baseUrl=https://prayer-bot-dnd.lak.nz
+	$(COMPOSE) --profile e2e run --rm cypress cypress run --config baseUrl=https://<your-domain>
 
 test-e2e-gui:
 	CYPRESS_ADMIN_TOKEN=$${ADMIN_TOKEN:-dev-token-change-me} \
 	$(COMPOSE) --profile e2e run --rm \
 		-e DISPLAY=$(DISPLAY) \
 		-v /tmp/.X11-unix:/tmp/.X11-unix \
-		cypress cypress open --config baseUrl=https://prayer-bot-dnd.lak.nz --e2e --browser electron
+		cypress cypress open --config baseUrl=https://<your-domain> --e2e --browser electron
 
 lint: env build
 	python -m ruff check . || echo "ruff not installed — install with: pip install ruff"
