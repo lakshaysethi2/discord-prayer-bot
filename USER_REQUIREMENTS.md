@@ -22,7 +22,7 @@ A Discord bot that plays scheduled prayer audio (6 traditions: Buddhist, Christi
 
 ### FR-3: Admin Dashboard
 - Web dashboard at `http://<host>:8700`
-- Cloudflare Tunnel: `https://prayer-bot-dnd.lak.nz`
+- Cloudflare Tunnel: `https://<your-domain>`
 - Guild selector with server names (not raw IDs)
 - Weekly schedule editor with dual Save buttons (top/bottom)
 - Prayer History view showing the last 50 recitation events
@@ -70,14 +70,14 @@ A Discord bot that plays scheduled prayer audio (6 traditions: Buddhist, Christi
 ## Verification Commands
 ```bash
 make test          # Run pytest in Docker (25 tests)
-make test-e2e      # Run Cypress E2E tests against live site (prayer-bot-dnd.lak.nz)
+make test-e2e      # Run Cypress E2E tests against live site (<your-domain>)
 make up            # Start bot + dashboard
 make logs          # View logs
 make down          # Stop services
 ```
 
 ## Cypress E2E Tests
-- Live site: `https://prayer-bot-dnd.lak.nz`
+- Live site: `https://<your-domain>`
 - Guild ID under test: `$GUILD_ID (set in env)`
 - Requires valid `ADMIN_TOKEN` in `.env` for admin schedule save tests
 - Run with: `make test-e2e` (uses `cypress/included` Docker image, no local Node required)

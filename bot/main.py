@@ -1160,7 +1160,7 @@ class PrayerBot(discord.Client):
             
             embed.add_field(
                 name="🌐 Dashboard",
-                value="Admins can configure schedules and settings at: https://prayer-bot-dnd.lak.nz",
+                value="Admins can configure schedules and settings at: https://<your-domain>",
                 inline=False
             )
             
