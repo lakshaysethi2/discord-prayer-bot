@@ -142,6 +142,7 @@ SCHEMA: tuple[str, ...] = (
         prayer_type TEXT NOT NULL,
         time_utc TEXT NOT NULL,  -- HH:MM in UTC (timezone rules: UTC base)
         enabled INTEGER NOT NULL DEFAULT 1,
+        volume_boost INTEGER NOT NULL DEFAULT 1,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(guild_id, day_of_week, time_utc)
     )
@@ -207,6 +208,7 @@ class PrayerSchedule:
     prayer_type: PrayerType
     time_utc: time    # stored as UTC per timezone rules
     enabled: bool = True
+    volume_boost: bool = True
     created_at: Optional[datetime] = None
 
 

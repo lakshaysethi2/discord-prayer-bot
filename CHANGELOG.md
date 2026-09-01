@@ -5,6 +5,7 @@ All notable changes to the Discord Prayer Bot.
 ## [Unreleased]
 
 ### Added
+- **Selective Volume Boost**: Added per-schedule volume boost checkbox in the admin dashboard. Volume boost is enabled by default for all prayers except Psalm 91 (which is unboosted by default to preserve balanced audio levels).
 - **The 91st Psalm**: Added Psalm 91 recitation audio (`psalm_91`), `/start` slash command choice, and dashboard scheduling support.
 - `dashboard/health.py` — `/health` freshness endpoint for uptime monitoring (Gatus). Computes `stale` from the enabled schedule's max gap, so days without scheduled prayers (e.g. Sunday) don't false-alarm.
 - **10-minute pre-join**: Bot now enters the voice channel 10 minutes before scheduled prayer.

@@ -106,6 +106,9 @@ class Database:
                 self._ensure_column(cur, "guild_channels", "parent_id", "TEXT")
                 # Migration: rename "time" to "time_utc" in prayer_schedules for existing DBs
                 self._ensure_column(cur, "prayer_schedules", "time_utc", "TEXT")
+                self._ensure_column(cur, "prayer_schedules", "volume_boost", "INTEGER NOT NULL DEFAULT 1")
+                # Psalm 91 is already high volume, default volume_boost to 0 for psalm_91
+                cur.execute("UPDATE prayer_schedules SET volume_boost = 0 WHERE prayer_type = 'psalm_91' AND volume_boost = 1")
                 existing_cols = {row["name"] for row in cur.execute("PRAGMA table_info(prayer_schedules)").fetchall()}
                 if "time" in existing_cols and "time_utc" in existing_cols:
                     cur.execute("UPDATE prayer_schedules SET time_utc = time WHERE time_utc IS NULL OR time_utc = ''")

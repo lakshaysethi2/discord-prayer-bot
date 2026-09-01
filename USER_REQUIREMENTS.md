@@ -16,6 +16,7 @@ A Discord bot that plays scheduled prayer audio (6 traditions: Buddhist, Christi
 - Bot joins voice on-demand (10 min before prayer, leaves 5 min after finishing)
 - Uses FFmpeg to play MP3 audio
 - Supports pause/resume/skip/volume via dashboard controls
+- Selective Volume Boost: Volume boost applies only to prayers configured with Boost enabled (Psalm 91 defaults to unchecked / 100% standard volume because of naturally high recording volume)
 - Auto-pause when last listener leaves voice channel; 5-min idle timeout disconnect
 - Auto-resume when first listener joins (if previously paused)
 - Guild-scoped BotState ensures complete isolation of playback position and volume between servers

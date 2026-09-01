@@ -131,14 +131,19 @@ class PrayerScheduler:
             if sched.day_of_week == weekday and 0 <= time_diff <= 2 and play_key not in self._played:
                 self._played.add(play_key)
                 filename = get_audio_filename(sched.prayer_type)
-                success = await self.play_prayer(
-                    self.guild_id, sched.prayer_type, filename
-                )
+                try:
+                    success = await self.play_prayer(
+                        self.guild_id, sched.prayer_type, filename, volume_boost=sched.volume_boost
+                    )
+                except TypeError:
+                    success = await self.play_prayer(
+                        self.guild_id, sched.prayer_type, filename
+                    )
                 from db.prayers import log_prayer_played
                 log_prayer_played(
                     self.db, self.guild_id, sched.id, sched.prayer_type, success
                 )
-                log.info("Played %s for guild %s", sched.prayer_type, self.guild_id)
+                log.info("Played %s for guild %s (volume_boost=%s)", sched.prayer_type, self.guild_id, sched.volume_boost)
                 # Track as active prayer for watchdog monitoring (store as UTC)
                 self._active_prayers[pre_key] = _as_utc(now)
 
@@ -173,7 +178,12 @@ class PrayerScheduler:
                     try:
                         p_type = PrayerType(parts[2])
                         filename = get_audio_filename(p_type)
-                        await self.play_prayer(self.guild_id, p_type, filename)
+                        try:
+                            await self.play_prayer(
+                                self.guild_id, p_type, filename, volume_boost=(p_type != PrayerType.PSALM_91)
+                            )
+                        except TypeError:
+                            await self.play_prayer(self.guild_id, p_type, filename)
                     except Exception as exc:
                         log.exception("Watchdog rejoin failed for %s: %s", prayer_key, exc)
 
