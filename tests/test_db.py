@@ -44,4 +44,5 @@ def test_database_and_crud():
         assert len(get_weekly_schedule(db, guild_id)) == 0
 
         # Audio filename
-        assert "Buddhist" in get_audio_filename(PrayerType.BUDDHIST)
+        for pt in PrayerType:
+            assert get_audio_filename(pt).endswith(".mp3")

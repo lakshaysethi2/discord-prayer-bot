@@ -31,6 +31,7 @@ from db.prayers import (
 )
 from db.prayers import get_guild_config, apply_guild_config
 from dashboard.auth import require_auth
+from dashboard.health import compute_health
 
 router = APIRouter()
 templates = Jinja2Templates(directory="dashboard/templates")
@@ -46,16 +47,16 @@ def get_db():
 
 @router.get("/health")
 async def health_check(db: Database = Depends(get_db)):
-    """Health check for Docker/Kubernetes."""
+    """Health + prayer freshness check (used by Gatus monitoring)."""
     try:
         # Check DB connectivity
         db.fetchone("SELECT 1")
-        return JSONResponse({"status": "healthy", "database": "connected"})
     except Exception as exc:
         return JSONResponse(
             {"status": "unhealthy", "database": "disconnected", "error": str(exc)},
             status_code=500
         )
+    return compute_health(db)
 
 
 @router.get("/history/{guild_id}", response_class=HTMLResponse)

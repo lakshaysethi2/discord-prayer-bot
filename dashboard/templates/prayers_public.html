@@ -14,8 +14,8 @@
 </div>
 
 {% if next_prayer %}
-{% set emojis = {"buddhist": "☸️", "christian": "✝️", "jewish": "✡️", "sufi": "☪️", "vedantic": "🕉️", "three_daily": "🌅"} %}
-{% set labels = {"buddhist": "Buddhist", "christian": "Christian", "jewish": "Jewish", "sufi": "Sufi", "vedantic": "Vedantic", "three_daily": "Three Daily"} %}
+{% set emojis = {"buddhist": "☸️", "christian": "✝️", "jewish": "✡️", "sufi": "☪️", "vedantic": "🕉️", "three_daily": "🌅", "psalm_91": "📖"} %}
+{% set labels = {"buddhist": "Buddhist", "christian": "Christian", "jewish": "Jewish", "sufi": "Sufi", "vedantic": "Vedantic", "three_daily": "Three Daily", "psalm_91": "The 91st Psalm"} %}
 <div class="rounded-xl bg-gradient-to-r from-indigo-900/60 to-purple-900/60 border border-indigo-700/50 p-5 mb-6 text-center">
   <div class="text-xs text-indigo-300 uppercase tracking-wider mb-1">Next Prayer</div>
   <div class="text-2xl mb-1">{{ emojis.get(next_prayer.prayer_type, "🕌") }} {{ labels.get(next_prayer.prayer_type, next_prayer.prayer_type | title) }}</div>
@@ -54,7 +54,7 @@
   <span id="tz-info" class="text-[10px] text-slate-600"></span>
 </div>
 
-{% set emojis = {"buddhist": "☸️", "christian": "✝️", "jewish": "✡️", "sufi": "☪️", "vedantic": "🕉️", "three_daily": "🌅"} %}
+{% set emojis = {"buddhist": "☸️", "christian": "✝️", "jewish": "✡️", "sufi": "☪️", "vedantic": "🕉️", "three_daily": "🌅", "psalm_91": "📖"} %}
 
 {% if schedules_by_day %}
 {% for day in schedules_by_day %}

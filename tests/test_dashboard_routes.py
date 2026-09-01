@@ -11,7 +11,11 @@ client = TestClient(app)
 def test_health_check():
     response = client.get("/health")
     assert response.status_code == 200
-    assert response.json() == {"status": "healthy", "database": "connected"}
+    body = response.json()
+    assert body["status"] in ("healthy", "degraded")
+    assert body["database"] == "connected"
+    assert "last_prayer_played_utc" in body
+    assert "stale" in body
 
 def test_bulk_action_disable_all():
     # This just tests if the route exists and requires auth

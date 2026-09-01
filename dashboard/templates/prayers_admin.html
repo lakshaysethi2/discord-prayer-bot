@@ -76,8 +76,8 @@
   </div>
 
   {% set days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] %}
-  {% set prayer_types = ["buddhist", "christian", "jewish", "sufi", "vedantic", "three_daily"] %}
-  {% set prayer_labels = {"buddhist": "☸️ Buddhist", "christian": "✝️ Christian", "jewish": "✡️ Jewish", "sufi": "☪️ Sufi", "vedantic": "🕉️ Vedantic", "three_daily": "🌅 Three Daily"} %}
+  {% set prayer_types = ["buddhist", "christian", "jewish", "sufi", "vedantic", "three_daily", "psalm_91"] %}
+  {% set prayer_labels = {"buddhist": "☸️ Buddhist", "christian": "✝️ Christian", "jewish": "✡️ Jewish", "sufi": "☪️ Sufi", "vedantic": "🕉️ Vedantic", "three_daily": "🌅 Three Daily", "psalm_91": "📖 The 91st Psalm"} %}
 
   {% for day_idx in range(7) %}
   {% set day_schedules = schedules | selectattr("day_of_week", "equalto", day_idx) | list %}

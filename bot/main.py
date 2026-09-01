@@ -198,6 +198,8 @@ class PrayerBot(discord.Client):
         )
         # Wire up pre-join: X min before prayer, ensure voice is connected
         scheduler.on_pre_prayer = self._on_pre_prayer
+        # Wire watchdog callback
+        scheduler.is_voice_connected = self._is_voice_connected
         self.schedulers[guild_id] = scheduler
         await scheduler.start()
 
@@ -315,7 +317,8 @@ class PrayerBot(discord.Client):
             log.debug("Cancelled pending disconnect task for guild %s", guild_id)
 
     def _make_schedule_disconnect(self, guild_id: str):
-        """Return a callback that schedules disconnect X min after playback finishes."""
+        """Return a callback that schedules disconnect X min after playback finishes.
+        and clears active prayer tracking."""
         async def _on_finish(player, track):
             # Cleanup notification message
             await self._cleanup_notification(guild_id, player)
@@ -339,10 +342,24 @@ class PrayerBot(discord.Client):
             self._cancel_disconnect_task(guild_id)
             task = asyncio.create_task(self._disconnect_voice_after_delay(guild_id, stay_mins * 60))
             self._disconnect_tasks[guild_id] = task
-            
+            # Clear active prayer tracking for this guild (playback finished)
+            scheduler = self.schedulers.get(guild_id)
+            if scheduler:
+                scheduler.clear_active()
+
             # 3. Update status after prayer ends
             asyncio.create_task(self._update_all_voice_statuses())
         return _on_finish
+
+    def _is_voice_connected(self, guild_id: str) -> bool:
+        """Check if bot is currently connected to voice for this guild."""
+        vc = self.voice_connections.get(guild_id)
+        if vc is None:
+            return False
+        if not vc.is_connected():
+            self.voice_connections.pop(guild_id, None)
+            return False
+        return True
 
     async def _say_tts(self, guild_id: str, text: str, done_event: asyncio.Event | None = None) -> None:
         """Add a TTS message to the guild's queue."""
@@ -440,6 +457,7 @@ class PrayerBot(discord.Client):
         if channel:
             with contextlib.suppress(Exception):
                 await channel.send(f"📋 **Log:** {message}")
+
 
     async def _on_pre_prayer(self, guild_id: str) -> None:
         """Called X min before scheduled prayer — join voice early."""
@@ -826,6 +844,9 @@ class PrayerBot(discord.Client):
             # Cancel any pending disconnect timer
             self._cancel_disconnect_task(guild_id)
             # Disconnect from voice (check dict + guild.voice_client)
+            scheduler = self.schedulers.get(guild_id)
+            if scheduler:
+                scheduler.clear_active()
             vc = self.voice_connections.pop(guild_id, None)
             if vc is None:
                 guild = self.get_guild(int(guild_id))
@@ -1052,6 +1073,7 @@ class PrayerBot(discord.Client):
         @discord.app_commands.choices(prayer_type=[
             discord.app_commands.Choice(name="Buddhist", value="buddhist"),
             discord.app_commands.Choice(name="Christian", value="christian"),
+            discord.app_commands.Choice(name="The 91st Psalm", value="psalm_91"),
             discord.app_commands.Choice(name="Jewish", value="jewish"),
             discord.app_commands.Choice(name="Sufi", value="sufi"),
             discord.app_commands.Choice(name="Vedantic", value="vedantic"),
