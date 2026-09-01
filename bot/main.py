@@ -1070,6 +1070,7 @@ class PrayerBot(discord.Client):
         @discord.app_commands.choices(prayer_type=[
             discord.app_commands.Choice(name="Buddhist", value="buddhist"),
             discord.app_commands.Choice(name="Christian", value="christian"),
+            discord.app_commands.Choice(name="The 91st Psalm", value="psalm_91"),
             discord.app_commands.Choice(name="Jewish", value="jewish"),
             discord.app_commands.Choice(name="Sufi", value="sufi"),
             discord.app_commands.Choice(name="Vedantic", value="vedantic"),

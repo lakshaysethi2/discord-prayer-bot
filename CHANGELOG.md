@@ -5,6 +5,7 @@ All notable changes to the Discord Prayer Bot.
 ## [Unreleased]
 
 ### Added
+- **The 91st Psalm**: Added Psalm 91 recitation audio (`psalm_91`), `/start` slash command choice, and dashboard scheduling support.
 - `dashboard/health.py` — `/health` freshness endpoint for uptime monitoring (Gatus). Computes `stale` from the enabled schedule's max gap, so days without scheduled prayers (e.g. Sunday) don't false-alarm.
 - **10-minute pre-join**: Bot now enters the voice channel 10 minutes before scheduled prayer.
 - **5-minute post-prayer leave**: Bot automatically disconnects 5 minutes after recitation finishes.

@@ -181,6 +181,7 @@ class PrayerType(str, Enum):
     SUFI = "sufi"
     VEDANTIC = "vedantic"
     THREE_DAILY = "three_daily"
+    PSALM_91 = "psalm_91"
 
 
 PRAYER_AUDIO_MAP = {
@@ -190,6 +191,7 @@ PRAYER_AUDIO_MAP = {
     PrayerType.SUFI: "Sufi prayers - DND community.mp3",
     PrayerType.VEDANTIC: "Vedantic prayers - DND community.mp3",
     PrayerType.THREE_DAILY: "The three daily prayers - DND community.mp3",
+    PrayerType.PSALM_91: "The 91st Psalm.mp3",
 }
 
 
