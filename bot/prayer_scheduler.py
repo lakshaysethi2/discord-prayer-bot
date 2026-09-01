@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import pytz
-from datetime import datetime, time, timedelta
+from datetime import datetime, time, timedelta, timezone
 from typing import Callable, Awaitable
 
 from db.database import Database
@@ -13,6 +13,14 @@ from db.models import PrayerType
 log = logging.getLogger(__name__)
 
 WATCHDOG_MAX_WINDOW_SECONDS = 600  # 10 minutes
+WATCHDOG_MAX_RETRIES = 1  # Max retry attempts per active prayer window
+
+
+def _as_utc(dt: datetime) -> datetime:
+    """Ensure datetime is timezone-aware and converted to UTC."""
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
 
 
 class PrayerScheduler:
@@ -27,26 +35,32 @@ class PrayerScheduler:
         db: Database,
         play_prayer: Callable[[str, PrayerType, str], Awaitable[bool]],
         guild_id: str,
-    ):
+    ) -> None:
         self.db = db
         self.play_prayer = play_prayer
         self.guild_id = guild_id
         self.timezone = pytz.utc
         self.on_pre_prayer: Callable[[str], Awaitable[None]] | None = None
         self._pre_joined: set[str] = set()  # track which (date, prayer) we already pre-joined for
-        self._played: set[str] = set() # track which (date, prayer) we already played
+        self._played: set[str] = set()  # track which (date, prayer) we already played
         self._active_prayers: dict[str, datetime] = {}  # prayer_key -> start_time (UTC)
+        self._watchdog_retries: dict[str, int] = {}  # prayer_key -> retry count
         self.is_voice_connected: Callable[[str], bool] | None = None
         self._task: asyncio.Task | None = None
         self._running = False
 
-    async def start(self):
+    def clear_active(self) -> None:
+        """Clear all active prayers and watchdog retry tracking."""
+        self._active_prayers.clear()
+        self._watchdog_retries.clear()
+
+    async def start(self) -> None:
         if self._running:
             return
         self._running = True
         self._task = asyncio.create_task(self._loop())
 
-    async def stop(self):
+    async def stop(self) -> None:
         self._running = False
         if self._task:
             self._task.cancel()
@@ -55,7 +69,7 @@ class PrayerScheduler:
             except asyncio.CancelledError:
                 pass
 
-    async def _loop(self):
+    async def _loop(self) -> None:
         while self._running:
             try:
                 await self._check_and_play()
@@ -64,7 +78,7 @@ class PrayerScheduler:
                 log.exception("Prayer scheduler error: %s", exc)
             await asyncio.sleep(30)  # check every 30s for pre-join precision
 
-    async def _check_and_play(self):
+    async def _check_and_play(self) -> None:
         now = datetime.now(self.timezone)
         weekday = now.weekday()
         current_time = now.time().replace(second=0, microsecond=0)
@@ -125,23 +139,34 @@ class PrayerScheduler:
                     self.db, self.guild_id, sched.id, sched.prayer_type, success
                 )
                 log.info("Played %s for guild %s", sched.prayer_type, self.guild_id)
-                # Track as active prayer for watchdog monitoring
-                self._active_prayers[pre_key] = now
+                # Track as active prayer for watchdog monitoring (store as UTC)
+                self._active_prayers[pre_key] = _as_utc(now)
 
-    async def _watchdog_check(self):
-        """Check if bot is in voice for active prayers; rejoin if missing."""
-        now = datetime.now(self.timezone)
+    async def _watchdog_check(self) -> None:
+        """Check if bot is in voice for active prayers; rejoin if missing (with retry limits)."""
+        now_utc = datetime.now(timezone.utc)
         expired_keys = []
 
         for prayer_key, start_time in list(self._active_prayers.items()):
-            elapsed = now - start_time
+            elapsed = now_utc - _as_utc(start_time)
             if elapsed.total_seconds() > WATCHDOG_MAX_WINDOW_SECONDS:
                 expired_keys.append(prayer_key)
                 continue
 
             if self.is_voice_connected and not self.is_voice_connected(self.guild_id):
-                log.info("Watchdog: bot not in voice for %s in guild %s, rejoining",
-                         prayer_key, self.guild_id)
+                retries = self._watchdog_retries.get(prayer_key, 0)
+                if retries >= WATCHDOG_MAX_RETRIES:
+                    log.warning(
+                        "Watchdog: max retries (%d) reached for %s in guild %s; skipping further retries",
+                        WATCHDOG_MAX_RETRIES, prayer_key, self.guild_id,
+                    )
+                    continue
+
+                log.info(
+                    "Watchdog: bot not in voice for %s in guild %s (attempt %d/%d), rejoining",
+                    prayer_key, self.guild_id, retries + 1, WATCHDOG_MAX_RETRIES,
+                )
+                self._watchdog_retries[prayer_key] = retries + 1
                 # Parse prayer_type from key (format: "date:day_of_week:prayer_type:time_utc")
                 parts = prayer_key.split(":")
                 if len(parts) >= 4:
@@ -154,3 +179,4 @@ class PrayerScheduler:
 
         for key in expired_keys:
             self._active_prayers.pop(key, None)
+            self._watchdog_retries.pop(key, None)

@@ -198,3 +198,43 @@ def test_active_prayer_added_on_play():
             asyncio.run(scheduler._check_and_play())
 
         assert "2025-01-06:0:christian:12:00:00" in scheduler._active_prayers
+
+
+def test_watchdog_retry_limit():
+    """Watchdog should not repeatedly call play_prayer beyond the retry limit."""
+    with Database(":memory:") as db:
+        guild_id = "test_guild_retry_limit"
+        upsert_schedule(db, guild_id, 0, PrayerType.CHRISTIAN, time(12, 0), enabled=True)
+
+        played_calls = []
+
+        async def mock_play(g_id, p_type, filename):
+            played_calls.append((g_id, p_type, filename))
+            return True
+
+        scheduler = PrayerScheduler(db, mock_play, guild_id)
+        scheduler.is_voice_connected = lambda g_id: False
+
+        prayer_key = f"2026-01-05:0:{PrayerType.CHRISTIAN.value}:12:00:00"
+        scheduler._active_prayers[prayer_key] = datetime.now(timezone.utc) - timedelta(minutes=1)
+
+        # First tick: should trigger rejoin
+        asyncio.run(scheduler._watchdog_check())
+        assert len(played_calls) == 1
+
+        # Second tick (30s later): should NOT re-trigger because retry limit is reached
+        asyncio.run(scheduler._watchdog_check())
+        assert len(played_calls) == 1
+
+
+def test_scheduler_clear_active():
+    """clear_active() should empty both _active_prayers and _watchdog_retries."""
+    with Database(":memory:") as db:
+        guild_id = "test_guild_clear"
+        scheduler = PrayerScheduler(db, lambda *a: True, guild_id)
+        scheduler._active_prayers["key1"] = datetime.now(timezone.utc)
+        scheduler._watchdog_retries["key1"] = 1
+
+        scheduler.clear_active()
+        assert len(scheduler._active_prayers) == 0
+        assert len(scheduler._watchdog_retries) == 0

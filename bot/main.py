@@ -345,7 +345,7 @@ class PrayerBot(discord.Client):
             # Clear active prayer tracking for this guild (playback finished)
             scheduler = self.schedulers.get(guild_id)
             if scheduler:
-                scheduler._active_prayers.clear()
+                scheduler.clear_active()
 
             # 3. Update status after prayer ends
             asyncio.create_task(self._update_all_voice_statuses())
@@ -844,6 +844,9 @@ class PrayerBot(discord.Client):
             # Cancel any pending disconnect timer
             self._cancel_disconnect_task(guild_id)
             # Disconnect from voice (check dict + guild.voice_client)
+            scheduler = self.schedulers.get(guild_id)
+            if scheduler:
+                scheduler.clear_active()
             vc = self.voice_connections.pop(guild_id, None)
             if vc is None:
                 guild = self.get_guild(int(guild_id))
