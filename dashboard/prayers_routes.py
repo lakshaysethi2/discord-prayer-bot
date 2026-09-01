@@ -266,6 +266,7 @@ async def save_prayers(
         local_time_str = form_data.get(f"time_{s.id}")
         prayer_str = form_data.get(f"prayer_{s.id}", "")
         enabled_val = f"enabled_{s.id}" in form_data
+        volume_boost_val = f"volume_boost_{s.id}" in form_data
         
         if local_time_str:
             try:
@@ -279,13 +280,13 @@ async def save_prayers(
                     try:
                         pt = PrayerType(prayer_str)
                         db.execute(
-                            "UPDATE prayer_schedules SET time_utc=?, enabled=?, prayer_type=? WHERE id=?",
-                            (t.isoformat(), int(enabled_val), pt.value, s.id),
+                            "UPDATE prayer_schedules SET time_utc=?, enabled=?, prayer_type=?, volume_boost=? WHERE id=?",
+                            (t.isoformat(), int(enabled_val), pt.value, int(volume_boost_val), s.id),
                         )
                     except ValueError:
-                        update_schedule(db, s.id, t, enabled_val)
+                        update_schedule(db, s.id, t, enabled_val, volume_boost=volume_boost_val)
                 else:
-                    update_schedule(db, s.id, t, enabled_val)
+                    update_schedule(db, s.id, t, enabled_val, volume_boost=volume_boost_val)
             except Exception:
                 pass
 
@@ -305,11 +306,13 @@ async def adhoc_play(
     db: Database = Depends(get_db),
 ):
     require_auth(request)
+    volume_boost = (prayer_type != PrayerType.PSALM_91.value)
     from dashboard.commands import enqueue
     enqueue(db, command="play_track", requested_by="admin", payload={
         "guild_id": guild_id,
         "track_id": filename,
         "prayer_type": prayer_type,
+        "volume_boost": volume_boost,
     })
     return JSONResponse({"ok": True, "msg": f"Queued: {prayer_type} prayer will play in a few seconds"})
 
@@ -326,11 +329,13 @@ async def adhoc_play_by_id(
         return JSONResponse({"ok": False, "msg": "Schedule not found"}, status_code=404)
     prayer_type = PrayerType(sched["prayer_type"])
     filename = get_audio_filename(prayer_type)
+    volume_boost = bool(sched["volume_boost"]) if "volume_boost" in sched.keys() else (prayer_type != PrayerType.PSALM_91)
     from dashboard.commands import enqueue
     enqueue(db, command="play_track", requested_by="admin", payload={
         "guild_id": sched["guild_id"],
         "track_id": filename,
         "prayer_type": prayer_type.value,
+        "volume_boost": volume_boost,
     })
     return JSONResponse({"ok": True, "msg": "Queued"})
 

@@ -124,6 +124,7 @@ class Player:
         self.persist_pause_state = persist_pause_state
         self.clock = ElapsedClock()
         self.current_track: TrackResponse | None = None
+        self.current_volume_boost: bool = True
         self._on_finish: FinishCallback | None = None
         # Set while we're intentionally stopping (pause / stop_hard) so the
         # after-callback doesn't misinterpret it as a natural finish.
@@ -147,9 +148,16 @@ class Player:
         return int(self.clock.elapsed())
 
     # ----------------------------------------------------------- lifecycle
-    async def start(self, track: TrackResponse, *, seek_seconds: float = 0.0) -> None:
-        """Begin playback of `track` from `seek_seconds`."""
+    async def start(
+        self,
+        track: TrackResponse,
+        *,
+        seek_seconds: float = 0.0,
+        volume_boost: bool = True,
+    ) -> None:
+        """Begin playback of `track` from `seek_seconds` with optional `volume_boost`."""
         async with self._lock:
+            self.current_volume_boost = volume_boost
             await self._start_locked(track, seek_seconds=seek_seconds)
 
     async def _start_locked(self, track: TrackResponse, *, seek_seconds: float) -> None:
@@ -162,8 +170,9 @@ class Player:
         self._play_seq += 1
         my_seq = self._play_seq
 
+        effective_volume = self.state.stream_volume_percent if self.current_volume_boost else 100
         source = self.source_factory(
-            track.local_path, seek_seconds, self.state.stream_volume_percent
+            track.local_path, seek_seconds, effective_volume
         )
         self.current_track = track
         self.clock.start(resume_from=seek_seconds)
@@ -250,12 +259,12 @@ class Player:
                 self.state.is_paused = False
 
     async def set_volume(self, volume_percent: int) -> int:
-        """Persist global gain and restart the active source at its exact position."""
+        """Persist global gain and restart the active source at its exact position if boosted."""
         volume = min(750, max(50, int(volume_percent)))
         async with self._lock:
             self.state.stream_volume_percent = volume
-            # If we are currently playing, restart the source to apply volume
-            if self.current_track is not None and self.is_playing():
+            # If we are currently playing and this track uses volume boost, restart the source to apply volume
+            if self.current_track is not None and self.is_playing() and self.current_volume_boost:
                 position = self.clock.stop()
                 await self._start_locked(self.current_track, seek_seconds=position)
         return volume

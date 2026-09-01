@@ -18,8 +18,8 @@ def test_database_and_crud():
         guild_id = "test_guild_123"
         t = time(12, 0)
 
-        # Upsert schedule
-        sched_id = upsert_schedule(db, guild_id, 0, PrayerType.BUDDHIST, t, enabled=True)
+        # Upsert schedule (default volume_boost=True)
+        sched_id = upsert_schedule(db, guild_id, 0, PrayerType.BUDDHIST, t, enabled=True, volume_boost=True)
         assert sched_id > 0
 
         # Get schedule
@@ -28,13 +28,15 @@ def test_database_and_crud():
         assert schedules[0].prayer_type == PrayerType.BUDDHIST
         assert schedules[0].time_utc == t
         assert schedules[0].enabled is True
+        assert schedules[0].volume_boost is True
 
-        # Update schedule
+        # Update schedule with volume_boost=False
         new_time = time(13, 30)
-        update_schedule(db, schedules[0].id, new_time, enabled=False)
+        update_schedule(db, schedules[0].id, new_time, enabled=False, volume_boost=False)
         schedules_updated = get_weekly_schedule(db, guild_id)
         assert schedules_updated[0].time_utc == new_time
         assert schedules_updated[0].enabled is False
+        assert schedules_updated[0].volume_boost is False
 
         # Log prayer played
         log_prayer_played(db, guild_id, schedules_updated[0].id, PrayerType.BUDDHIST, success=True)

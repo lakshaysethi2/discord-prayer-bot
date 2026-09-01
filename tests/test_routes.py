@@ -36,7 +36,7 @@ def test_admin_and_public_routes(monkeypatch):
         assert guild_id in response_pub.text
         assert "Prayer Schedule" in response_pub.text
 
-        # Test POST save
+        # Test POST save with volume_boost checked
         schedules = db.fetchall("SELECT id FROM prayer_schedules WHERE guild_id = ?", (guild_id,))
         sched_id = schedules[0]["id"]
         response_post = client.post(
@@ -46,10 +46,31 @@ def test_admin_and_public_routes(monkeypatch):
                 "guild_id": guild_id,
                 f"time_{sched_id}": "09:00",
                 f"enabled_{sched_id}": "on",
+                f"volume_boost_{sched_id}": "on",
+                f"prayer_{sched_id}": "jewish",
             },
             follow_redirects=False,
         )
         assert response_post.status_code == 303
+        updated = db.fetchone("SELECT volume_boost FROM prayer_schedules WHERE id = ?", (sched_id,))
+        assert updated["volume_boost"] == 1
+
+        # Test POST save with volume_boost unchecked
+        response_post2 = client.post(
+            "/prayers/save",
+            headers={"authorization": f"Bearer {token}"},
+            data={
+                "guild_id": guild_id,
+                f"time_{sched_id}": "09:00",
+                f"enabled_{sched_id}": "on",
+                f"prayer_{sched_id}": "psalm_91",
+            },
+            follow_redirects=False,
+        )
+        assert response_post2.status_code == 303
+        updated2 = db.fetchone("SELECT volume_boost, prayer_type FROM prayer_schedules WHERE id = ?", (sched_id,))
+        assert updated2["volume_boost"] == 0
+        assert updated2["prayer_type"] == "psalm_91"
 
         app.dependency_overrides.clear()
 

@@ -91,14 +91,24 @@
              class="time-inp bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs w-24"
              value="{{ sched.time_utc if sched else '' }}" data-id="{{ sched.id if sched else '' }}" data-utc="{{ sched.time_utc if sched else '' }}">
       <select name="prayer_{{ sched.id if sched else 'new_' + day_idx|string + '_' + slot_num|string }}"
+              onchange="onPrayerChange(this)"
               class="flex-1 bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs">
         <option value="">— none —</option>
         {% for pt in prayer_types %}
         <option value="{{ pt }}" {% if sched and sched.prayer_type.value == pt %}selected{% endif %}>{{ prayer_labels[pt] }}</option>
         {% endfor %}
       </select>
-      <input type="checkbox" name="enabled_{{ sched.id if sched else 'new_' + day_idx|string + '_' + slot_num|string }}"
-             {% if sched and sched.enabled %}checked{% endif %} class="h-3.5 w-3.5">
+      <label class="flex items-center gap-1 text-[11px] text-slate-400 cursor-pointer bg-slate-800/60 border border-slate-700/60 rounded px-2 py-0.5" title="Apply volume boost to this prayer">
+        <input type="checkbox" name="volume_boost_{{ sched.id if sched else 'new_' + day_idx|string + '_' + slot_num|string }}"
+               class="boost-chk h-3.5 w-3.5 accent-indigo-600 rounded"
+               {% if sched and sched.volume_boost %}checked{% elif not sched %}checked{% endif %}>
+        <span class="text-[11px]">Boost</span>
+      </label>
+      <label class="flex items-center gap-1 text-[11px] text-slate-400 cursor-pointer bg-slate-800/60 border border-slate-700/60 rounded px-2 py-0.5" title="Enable/Disable schedule slot">
+        <input type="checkbox" name="enabled_{{ sched.id if sched else 'new_' + day_idx|string + '_' + slot_num|string }}"
+               {% if sched and sched.enabled %}checked{% endif %} class="h-3.5 w-3.5 accent-indigo-600 rounded">
+        <span class="text-[11px]">Active</span>
+      </label>
       {% if sched and sched.enabled %}
       <button type="button" onclick="playNow(this, '{{ sched.id }}')"
               class="text-emerald-500 hover:text-emerald-400 text-xs px-1" title="Play Now">▶</button>
@@ -112,6 +122,18 @@
 </form>
 
 <script>
+function onPrayerChange(selectEl) {
+  const row = selectEl.closest('.flex');
+  if (!row) return;
+  const boostChk = row.querySelector('.boost-chk');
+  if (!boostChk) return;
+  if (selectEl.value === 'psalm_91') {
+    boostChk.checked = false;
+  } else if (selectEl.value !== '') {
+    boostChk.checked = true;
+  }
+}
+
 // Browser timezone for initial default
 const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
 let currentTz = browserTz;

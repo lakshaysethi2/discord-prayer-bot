@@ -519,8 +519,18 @@ class PrayerBot(discord.Client):
         
         player.state.now_playing_message_id = None
 
-    async def _start_prayer_playback(self, guild_id: str, prayer_type: PrayerType, filename: str, is_adhoc: bool = False) -> bool:
+    async def _start_prayer_playback(
+        self,
+        guild_id: str,
+        prayer_type: PrayerType,
+        filename: str,
+        is_adhoc: bool = False,
+        volume_boost: bool | None = None,
+    ) -> bool:
         """Shared logic for starting a prayer (scheduled, adhoc, or slash)."""
+        if volume_boost is None:
+            volume_boost = (prayer_type != PrayerType.PSALM_91)
+
         media_path = MEDIA_DIR / filename
         if not media_path.exists():
             log.error("Audio file not found for guild %s: %s", guild_id, media_path)
@@ -597,15 +607,19 @@ class PrayerBot(discord.Client):
             playlist_position=0,
             ready=True,
         )
-        await player.start(track)
+        await player.start(track, volume_boost=volume_boost)
 
-        log.info("Playing %s in guild %s (will disconnect after stay duration)", prayer_type.value, guild_id)
+        log.info("Playing %s in guild %s (volume_boost=%s, will disconnect after stay duration)", prayer_type.value, guild_id, volume_boost)
         await self._log_to_channel(guild_id, f"Started playing **{prayer_type.value.title()}** prayer.")
         return True
 
-    async def _play_prayer_callback(self, guild_id: str, prayer_type: PrayerType, filename: str) -> bool:
+    async def _play_prayer_callback(
+        self, guild_id: str, prayer_type: PrayerType, filename: str, volume_boost: bool = True
+    ) -> bool:
         """Called by PrayerScheduler when a prayer should play."""
-        success = await self._start_prayer_playback(guild_id, prayer_type, filename)
+        success = await self._start_prayer_playback(
+            guild_id, prayer_type, filename, volume_boost=volume_boost
+        )
         if success:
             # Trigger immediate status update to "Now praying"
             asyncio.create_task(self._update_all_voice_statuses())
@@ -831,7 +845,10 @@ class PrayerBot(discord.Client):
                 # Fallback if it's an adhoc track not in enum
                 prayer_type = PrayerType.THREE_DAILY 
 
-            success = await self._start_prayer_playback(guild_id, prayer_type, track_id, is_adhoc=True)
+            volume_boost = payload.get("volume_boost", None)
+            success = await self._start_prayer_playback(
+                guild_id, prayer_type, track_id, is_adhoc=True, volume_boost=volume_boost
+            )
             return "ok:playing" if success else "error:playback_failed"
 
         elif command == "disconnect":
@@ -1084,10 +1101,11 @@ class PrayerBot(discord.Client):
             guild_id = str(interaction.guild_id)
             pt = PrayerType(prayer_type)
             filename = get_audio_filename(pt)
+            volume_boost = (pt != PrayerType.PSALM_91)
             
             await interaction.response.defer(ephemeral=True)
             
-            success = await self._start_prayer_playback(guild_id, pt, filename, is_adhoc=True)
+            success = await self._start_prayer_playback(guild_id, pt, filename, is_adhoc=True, volume_boost=volume_boost)
             if success:
                 await interaction.followup.send(f"🕌 Playing **{pt.value.title()}** prayer.")
             else:

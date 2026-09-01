@@ -24,7 +24,7 @@ def create_prayer_tables(db: Database) -> None:
 
 def get_weekly_schedule(db: Database, guild_id: str) -> List[PrayerSchedule]:
     rows = db.fetchall("""
-        SELECT id, guild_id, day_of_week, prayer_type, time_utc, enabled, created_at
+        SELECT id, guild_id, day_of_week, prayer_type, time_utc, enabled, volume_boost, created_at
         FROM prayer_schedules
         WHERE guild_id = ?
         ORDER BY day_of_week, time_utc
@@ -38,6 +38,7 @@ def get_weekly_schedule(db: Database, guild_id: str) -> List[PrayerSchedule]:
             prayer_type=PrayerType(r["prayer_type"]),
             time_utc=time.fromisoformat(r["time_utc"]),
             enabled=bool(r["enabled"]),
+            volume_boost=bool(r["volume_boost"]) if "volume_boost" in r.keys() else True,
             created_at=r["created_at"],
         ))
     return schedules
@@ -50,14 +51,16 @@ def upsert_schedule(
     prayer_type: PrayerType,
     t_utc: time,
     enabled: bool = True,
+    volume_boost: bool = True,
 ) -> int:
     db.execute("""
-        INSERT INTO prayer_schedules (guild_id, day_of_week, prayer_type, time_utc, enabled)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO prayer_schedules (guild_id, day_of_week, prayer_type, time_utc, enabled, volume_boost)
+        VALUES (?, ?, ?, ?, ?, ?)
         ON CONFLICT(guild_id, day_of_week, time_utc) DO UPDATE SET
             enabled = excluded.enabled,
-            prayer_type = excluded.prayer_type
-    """, (guild_id, day, prayer_type.value, t_utc.isoformat(), int(enabled)))
+            prayer_type = excluded.prayer_type,
+            volume_boost = excluded.volume_boost
+    """, (guild_id, day, prayer_type.value, t_utc.isoformat(), int(enabled), int(volume_boost)))
     row = db.fetchone(
         "SELECT id FROM prayer_schedules WHERE guild_id=? AND day_of_week=? AND prayer_type=? AND time_utc=?",
         (guild_id, day, prayer_type.value, t_utc.isoformat()),
@@ -65,12 +68,18 @@ def upsert_schedule(
     return row["id"] if row else -1
 
 
-def update_schedule(db: Database, schedule_id: int, t_utc: time, enabled: bool) -> None:
+def update_schedule(
+    db: Database,
+    schedule_id: int,
+    t_utc: time,
+    enabled: bool,
+    volume_boost: bool = True,
+) -> None:
     db.execute("""
         UPDATE prayer_schedules
-        SET time_utc = ?, enabled = ?
+        SET time_utc = ?, enabled = ?, volume_boost = ?
         WHERE id = ?
-    """, (t_utc.isoformat(), int(enabled), schedule_id))
+    """, (t_utc.isoformat(), int(enabled), int(volume_boost), schedule_id))
 
 
 def delete_schedule(db: Database, schedule_id: int) -> None:
