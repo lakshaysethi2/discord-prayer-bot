@@ -27,6 +27,17 @@ import edge_tts
 from bot.apply_server import apply_server_config as live_apply
 from bot.player_framework import Player, default_ffmpeg_source
 from bot.prayer_scheduler import PrayerScheduler
+from bot.daily_draw_logic import (
+    DAILY_DRAW_BUTTON_CUSTOM_ID,
+    DAILY_DRAW_BUTTON_LABEL,
+    is_daily_post_due,
+)
+from db.daily_draw import (
+    DEFAULT_CHANNEL_ID as DEFAULT_DRAW_CHANNEL_ID,
+    get_active_message,
+    get_or_seed_config,
+    start_new_day,
+)
 from bot.state_framework import BotState, GuildScopedState
 from dashboard import commands as cmd_queue
 from db.database import Database
@@ -52,6 +63,10 @@ DB_PATH = os.environ.get("DATABASE_PATH", "./data/prayer_bot.db")
 MEDIA_DIR = Path("media/prayers")
 TTS_DIR = Path("data/tts")
 
+# Daily draw (issue #16): bounded retries per local day when the target
+# channel is missing/unwritable (spec §9 — no all-day retry spam).
+_DAILY_DRAW_MAX_RETRIES = 5
+
 # ---------------------------------------------------------------------------
 # Bot class
 # ---------------------------------------------------------------------------
@@ -63,6 +78,10 @@ class PrayerBot(discord.Client):
         intents.voice_states = True
         intents.guilds = True
         intents.message_content = False
+        # Daily draw (issue #16, spec §10): the role's full member list is
+        # needed to pick a random draw target. Requires the privileged
+        # 'Server Members Intent' to also be enabled in the developer portal.
+        intents.members = True
         super().__init__(intents=intents)
 
         self.db = Database(DB_PATH)
@@ -81,6 +100,11 @@ class PrayerBot(discord.Client):
         self._pending_joiners: dict[str, list[discord.Member]] = {} # guild_id -> list of members to greet
         self._status_task: asyncio.Task | None = None
         self._cleanup_task: asyncio.Task | None = None
+        # Daily draw (issue #16): per-guild draw locks (consumed by the
+        # on_interaction wiring), scheduler task, and bounded-retry state.
+        self._daily_draw_locks: dict[str, asyncio.Lock] = {}
+        self._daily_draw_task: asyncio.Task | None = None
+        self._daily_draw_failures: dict[str, tuple[str, int]] = {}
 
     # ------------------------------------------------------------------ lifecycle
 
@@ -124,6 +148,10 @@ class PrayerBot(discord.Client):
         if not self._status_task or self._status_task.done():
             self._status_task = asyncio.create_task(self._voice_status_loop())
             
+        # Start the daily draw scheduler loop (issue #16) if not running yet
+        if not self._daily_draw_task or self._daily_draw_task.done():
+            self._daily_draw_task = asyncio.create_task(self._daily_draw_loop())
+
         # Log startup complete
         log.info("Prayer Bot ready — %d guilds, %d schedulers active",
                  len(self.guilds), len(self.schedulers))
@@ -936,6 +964,113 @@ class PrayerBot(discord.Client):
             
             # Sleep for 1 minute (60 seconds) to keep the countdown accurate
             await asyncio.sleep(60)
+
+    # ---------------------------------------------------------------- daily draw
+
+    def _daily_draw_lock(self, guild_id: str) -> asyncio.Lock:
+        """Per-guild draw lock (serializes draws, heart updates, log writes)."""
+        lock = self._daily_draw_locks.get(guild_id)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._daily_draw_locks[guild_id] = lock
+        return lock
+
+    async def _resolve_daily_draw_guild(self) -> str | None:
+        """Find the single guild owning the configured draw channel (spec §6).
+
+        Prefers a previously seeded config row, then a live lookup across
+        connected guilds (cached channels first, one fetch_channel fallback).
+        """
+        try:
+            channel_id = int(os.environ.get("PRAYER_DRAW_CHANNEL_ID", DEFAULT_DRAW_CHANNEL_ID))
+        except ValueError:
+            log.error("Daily draw: PRAYER_DRAW_CHANNEL_ID is not a valid integer — loop disabled")
+            return None
+
+        row = self.db.fetchone(
+            "SELECT guild_id FROM daily_draw_config WHERE channel_id = ?",
+            (str(channel_id),),
+        )
+        if row is not None and self.get_guild(int(row["guild_id"])) is not None:
+            return str(row["guild_id"])
+
+        for guild in self.guilds:
+            channel = guild.get_channel(channel_id)
+            if channel is None:
+                with contextlib.suppress(discord.HTTPException):
+                    channel = await guild.fetch_channel(channel_id)
+            if channel is not None:
+                gid = str(guild.id)
+                get_or_seed_config(self.db, gid)  # seeds defaults on first sight
+                log.info("Daily draw: enabled for guild %s (channel %s)", gid, channel_id)
+                return gid
+        return None
+
+    async def _daily_draw_loop(self) -> None:
+        """Independent background loop: one draw message per local day (spec §7).
+
+        Mirrors `_voice_status_loop`. The due/catch-up/no-double-post decision
+        is the pure rule `bot.daily_draw_logic.is_daily_post_due`, evaluated in
+        the guild's configured timezone (Europe/Paris, DST-aware).
+        """
+        await self.wait_until_ready()
+
+        guild_id = await self._resolve_daily_draw_guild()
+        if guild_id is None:
+            log.warning("Daily draw: configured channel not found on any guild — loop disabled")
+            return
+
+        while not self.is_closed():
+            try:
+                await self._daily_draw_tick(guild_id)
+            except Exception:
+                log.exception("Error in daily draw loop")
+            await asyncio.sleep(60)
+
+    async def _daily_draw_tick(self, guild_id: str) -> None:
+        """One scheduler pass: post the day's message if it is due."""
+        cfg = get_or_seed_config(self.db, guild_id)
+        tz = pytz.timezone(cfg.timezone_name)
+        now_local = datetime.now(tz)
+        today_local = now_local.date().isoformat()
+        _message_id, last_post_date, _hearts = get_active_message(self.db, guild_id)
+
+        if not is_daily_post_due(now_local, cfg.post_hour, last_post_date):
+            return
+
+        # Bounded retries: never spam a missing/unwritable channel all day (§9).
+        date, attempts = self._daily_draw_failures.get(guild_id, (today_local, 0))
+        if date == today_local and attempts >= _DAILY_DRAW_MAX_RETRIES:
+            return
+
+        channel = self.get_channel(int(cfg.channel_id))
+        if channel is None or not isinstance(channel, discord.TextChannel):
+            log.warning("Daily draw: channel %s not found in guild %s", cfg.channel_id, guild_id)
+            self._bump_daily_draw_failure(guild_id, today_local)
+            return
+
+        button = discord.ui.Button(
+            style=discord.ButtonStyle.primary,
+            label=DAILY_DRAW_BUTTON_LABEL,
+            custom_id=DAILY_DRAW_BUTTON_CUSTOM_ID,
+        )
+        view = discord.ui.View()
+        view.add_item(button)
+        msg = await channel.send(content=cfg.base_text, view=view)
+        start_new_day(self.db, guild_id, str(msg.id), today_local)
+        self._daily_draw_failures.pop(guild_id, None)
+        log.info(
+            "Daily draw: posted message %s for %s (%s)",
+            msg.id,
+            today_local,
+            cfg.timezone_name,
+        )
+
+    def _bump_daily_draw_failure(self, guild_id: str, today_local: str) -> None:
+        date, attempts = self._daily_draw_failures.get(guild_id, (today_local, 0))
+        if date != today_local:
+            date, attempts = today_local, 0
+        self._daily_draw_failures[guild_id] = (date, attempts + 1)
 
     def _log_permissions(self, guild: discord.Guild, voice_channel_id: str | None) -> None:
         """Log the bot's permissions in the guild and target voice channel."""

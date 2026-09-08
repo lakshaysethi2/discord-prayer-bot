@@ -169,6 +169,38 @@ SCHEMA: tuple[str, ...] = (
         joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         left_at TIMESTAMP,
         duration_seconds INTEGER
+    )""",
+    # ---- daily draw (issue #16): config + day state + per-user cooldowns ---
+    """
+    CREATE TABLE IF NOT EXISTS daily_draw_config (
+        guild_id        TEXT PRIMARY KEY,
+        channel_id      TEXT NOT NULL,
+        target_role_id  TEXT NOT NULL,
+        base_text       TEXT NOT NULL,
+        emoji_catpray   TEXT NOT NULL,
+        cooldown_hours  INTEGER NOT NULL DEFAULT 18,
+        post_hour       INTEGER NOT NULL DEFAULT 7,   -- 0-23
+        timezone_name   TEXT NOT NULL DEFAULT 'Europe/Paris'
+    )
+    """,
+    # Tracks the currently-active message of the day per guild. Hearts are an
+    # integer count — message content is rebuilt from base text, never parsed.
+    """
+    CREATE TABLE IF NOT EXISTS daily_draw_state (
+        guild_id        TEXT PRIMARY KEY,
+        active_message_id TEXT,
+        active_post_local_date TEXT,  -- 'YYYY-MM-DD' in the configured tz (Europe/Paris)
+        heart_count     INTEGER NOT NULL DEFAULT 0
+    )
+    """,
+    # Per-user cooldown (default 18h); last_draw_at stored as UTC ISO
+    # (repo convention: UTC, no tz suffix).
+    """
+    CREATE TABLE IF NOT EXISTS daily_draw_cooldowns (
+        guild_id   TEXT NOT NULL,
+        user_id    TEXT NOT NULL,
+        last_draw_at DATETIME NOT NULL,
+        PRIMARY KEY (guild_id, user_id)
     )
     """,
 )

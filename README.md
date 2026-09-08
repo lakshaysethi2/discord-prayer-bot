@@ -34,3 +34,26 @@ make logs    # View logs
 - `requirements.txt`
 - `dashboard/app.py`
 - Fixed broken DB/code (see `plan.md` for details)
+
+
+## Daily "Pray for a Friend" Ticket Draw (issue #16)
+
+Once per local calendar day at **07:00 Europe/Paris** (DST-aware, catch-up if
+the bot was offline — exactly one message, never a backlog), the bot posts
+"Pray for a friend today, or simply hold them in mind with love and kindness."
+with a blue **"Draw your ticket"** button. Pressing the button picks a random
+member of the configured key role (drawer excluded, bots allowed) and replies
+ephemerally; each successful draw appends one heart to the day's message.
+Per-user cooldown: 18 hours. Draws are recorded in the append-only
+`data/daily_draw_log.txt` (UTC datetime, drawer, drawee) — no per-draw DB table.
+
+Feature prerequisites:
+1. **Server Members Intent** (privileged) must be enabled in the Discord
+   developer portal; the bot sets `intents.members = True` itself. Without it,
+   the role's member list is incomplete and draws break.
+2. The bot needs **Send Messages** in the target channel (editing its own
+   message needs nothing extra).
+3. Config defaults (seeded into the DB on first run, overridable via
+   `.env.example` vars): channel `1377047809513099345`, key role id
+   `1481586542911684648`, catpray emoji `1501495634887442533`, cooldown 18h.
+   Re-verify these ids at deploy if the channel/role/emoji were ever recreated.

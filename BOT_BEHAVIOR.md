@@ -85,3 +85,13 @@ The bot provides constant feedback on the upcoming schedule through three differ
 *   **Idle Detection**: If everyone leaves the voice room while a prayer is paused, the bot will wait 5 minutes and then disconnect to save resources.
 *   **DST Awareness**: All time calculations are handled on the server using official timezone databases. This ensures that when your local time changes for Daylight Savings, the prayer remains at the correct local hour.
 *   **Startup Resilience**: If the bot restarts, it immediately checks if it should be in a voice channel (the 10-minute window) and resumes its duties without missing a beat.
+
+
+---
+
+## 6. Daily Draw Feature Prerequisites (issue #16)
+
+1.  **Server Members Intent (privileged)**: the random draw target is picked from the configured key role's member list, so this intent must be enabled in the Discord developer portal **and** `intents.members = True` (set by the bot itself). Without it, member/role data is incomplete and draws fail gracefully.
+2.  **Channel permissions**: the bot needs **Send Messages** in the draw channel; editing its own message requires nothing extra (Manage Channels is NOT required).
+3.  **Key role id** defaults to `1481586542911684648` (env `PRAYER_DRAW_ROLE_ID`, stored in DB). If the role is ever deleted/recreated, update the id.
+4.  Verify at deploy that channel `1377047809513099345` and catpray emoji `1501495634887442533` still belong to the guild the bot runs in.
