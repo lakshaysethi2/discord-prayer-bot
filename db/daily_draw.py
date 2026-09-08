@@ -19,7 +19,9 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
+
+import pytz
 
 from bot.daily_draw_logic import (
     DAILY_DRAW_BASE_TEXT,
@@ -208,7 +210,7 @@ def start_new_day(db: Database, guild_id: str, message_id: str, post_date: str) 
 def _to_naive_utc(utc_dt: datetime) -> datetime:
     """Normalize to naive UTC (repo convention) from aware or naive input."""
     if utc_dt.tzinfo is not None:
-        return utc_dt.astimezone(UTC).replace(tzinfo=None)
+        return utc_dt.astimezone(pytz.UTC).replace(tzinfo=None)
     return utc_dt
 
 
