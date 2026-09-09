@@ -2,10 +2,10 @@
 
 Covers: SCHEMA additions, `get_or_seed_config` (env seeding + idempotence),
 setters, active-day state (`get_active_message` / `update_hearts` /
-`start_new_day`), per-user cooldowns (`last_draw_at` / `set_last_draw`, naive
-UTC convention), and the provisional pure due-rule `is_daily_post_due`
-(finally owned in `bot/daily_draw_logic.py`; the full DST/scheduling suite is
-Coder 5's `test_daily_draw_scheduling.py`).
+`start_new_day` / `repoint_active_message`), per-user cooldowns
+(`last_draw_at` / `set_last_draw`, naive UTC convention), and the pure
+due-rule `is_daily_post_due` (owned in `bot/daily_draw_logic.py`; the full
+DST/scheduling suite is Coder 5's `test_daily_draw_logic.py`).
 """
 
 from __future__ import annotations
@@ -26,6 +26,7 @@ from db.daily_draw import (
     get_active_message,
     get_or_seed_config,
     last_draw_at,
+    repoint_active_message,
     set_channel_id,
     set_cooldown_hours,
     set_last_draw,
@@ -148,6 +149,22 @@ def test_update_hearts_without_state_row(db):
     # Defensive: upserts instead of crashing when called before start_new_day.
     update_hearts(db, GID, 3)
     assert get_active_message(db, GID) == (None, None, 3)
+
+
+def test_repoint_preserves_hearts_and_date(db):
+    # Spec §9 self-heal: a repost of the same day's message must carry the
+    # current heart count and keep the post date — unlike start_new_day,
+    # which zeroes hearts. Contract: repoint_active_message(db, gid, msg_id)
+    # — NO post_date parameter (the date must not change on a repost).
+    start_new_day(db, GID, "555", "2026-07-20")
+    update_hearts(db, GID, 2)
+    repoint_active_message(db, GID, "777")
+    assert get_active_message(db, GID) == ("777", "2026-07-20", 2)
+
+    # Upserts safely when no state row exists yet (defensive parity with
+    # update_hearts): no crash, hearts start at 0.
+    repoint_active_message(db, "999", "888")
+    assert get_active_message(db, "999") == ("888", None, 0)
 
 
 # ---------------------------------------------------------------------------

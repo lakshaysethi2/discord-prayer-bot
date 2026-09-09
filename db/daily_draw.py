@@ -242,3 +242,46 @@ def set_last_draw(db: Database, guild_id: str, user_id: str, utc_dt: datetime) -
         """,
         (guild_id, user_id, _to_naive_utc(utc_dt).isoformat()),
     )
+
+
+# ---------------------------------------------------------------------------
+# Guild enumeration + self-heal re-point (Coder 5 Contract A / spec §9)
+# ---------------------------------------------------------------------------
+
+def list_configured_guilds(db: Database) -> list[DailyDrawConfig]:
+    """All guilds that have a draw config row (seeded or explicit)."""
+    rows = db.fetchall(
+        """
+        SELECT guild_id, channel_id, target_role_id, base_text, emoji_catpray,
+               cooldown_hours, post_hour, timezone_name
+        FROM daily_draw_config
+        """
+    )
+    return [
+        DailyDrawConfig(
+            guild_id=row["guild_id"],
+            channel_id=row["channel_id"],
+            target_role_id=row["target_role_id"],
+            base_text=row["base_text"],
+            emoji_catpray=row["emoji_catpray"],
+            cooldown_hours=int(row["cooldown_hours"]),
+            post_hour=int(row["post_hour"]),
+            timezone_name=row["timezone_name"],
+        )
+        for row in rows
+    ]
+
+
+def repoint_active_message(db: Database, guild_id: str, message_id: str) -> None:
+    """Self-heal (spec §9): point state at a fresh message WITHOUT resetting
+    hearts or the post date, so a reposted message carries the current count.
+    """
+    db.execute(
+        """
+        INSERT INTO daily_draw_state (guild_id, active_message_id)
+        VALUES (?, ?)
+        ON CONFLICT(guild_id) DO UPDATE SET
+            active_message_id = excluded.active_message_id
+        """,
+        (guild_id, message_id),
+    )
