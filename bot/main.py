@@ -27,6 +27,23 @@ import edge_tts
 from bot.apply_server import apply_server_config as live_apply
 from bot.player_framework import Player, default_ffmpeg_source
 from bot.prayer_scheduler import PrayerScheduler
+from bot.daily_draw_logic import (
+    DAILY_DRAW_BASE_TEXT,
+    DAILY_DRAW_BUTTON_CUSTOM_ID,
+    DAILY_DRAW_BUTTON_LABEL,
+    append_draw_log,
+    build_message_text,
+    is_daily_post_due,
+    is_on_cooldown,
+    paris_local_date,
+    pick_random_member,
+)
+from db.daily_draw import (
+    DEFAULT_CHANNEL_ID as DEFAULT_DRAW_CHANNEL_ID,
+    get_active_message,
+    get_or_seed_config,
+    start_new_day,
+)
 from bot.state_framework import BotState, GuildScopedState
 from dashboard import commands as cmd_queue
 from db.database import Database
@@ -52,6 +69,10 @@ DB_PATH = os.environ.get("DATABASE_PATH", "./data/prayer_bot.db")
 MEDIA_DIR = Path("media/prayers")
 TTS_DIR = Path("data/tts")
 
+# Daily draw (issue #16): bounded retries per local day when the target
+# channel is missing/unwritable (spec §9 — no all-day retry spam).
+_DAILY_DRAW_MAX_RETRIES = 5
+
 # ---------------------------------------------------------------------------
 # Bot class
 # ---------------------------------------------------------------------------
@@ -63,6 +84,10 @@ class PrayerBot(discord.Client):
         intents.voice_states = True
         intents.guilds = True
         intents.message_content = False
+        # Daily draw (issue #16, spec §10): the role's full member list is
+        # needed to pick a random draw target. Requires the privileged
+        # 'Server Members Intent' to also be enabled in the developer portal.
+        intents.members = True
         super().__init__(intents=intents)
 
         self.db = Database(DB_PATH)
@@ -81,6 +106,11 @@ class PrayerBot(discord.Client):
         self._pending_joiners: dict[str, list[discord.Member]] = {} # guild_id -> list of members to greet
         self._status_task: asyncio.Task | None = None
         self._cleanup_task: asyncio.Task | None = None
+        # Daily draw (issue #16): per-guild draw locks (consumed by the
+        # on_interaction wiring), scheduler task, and bounded-retry state.
+        self._daily_draw_locks: dict[str, asyncio.Lock] = {}
+        self._daily_draw_task: asyncio.Task | None = None
+        self._daily_draw_failures: dict[str, tuple[str, int]] = {}
 
     # ------------------------------------------------------------------ lifecycle
 
@@ -124,6 +154,10 @@ class PrayerBot(discord.Client):
         if not self._status_task or self._status_task.done():
             self._status_task = asyncio.create_task(self._voice_status_loop())
             
+        # Start the daily draw scheduler loop (issue #16) if not running yet
+        if not self._daily_draw_task or self._daily_draw_task.done():
+            self._daily_draw_task = asyncio.create_task(self._daily_draw_loop())
+
         # Log startup complete
         log.info("Prayer Bot ready — %d guilds, %d schedulers active",
                  len(self.guilds), len(self.schedulers))
@@ -936,6 +970,304 @@ class PrayerBot(discord.Client):
             
             # Sleep for 1 minute (60 seconds) to keep the countdown accurate
             await asyncio.sleep(60)
+
+    # ---------------------------------------------------------------- daily draw
+
+    def _daily_draw_lock(self, guild_id: str) -> asyncio.Lock:
+        """Per-guild draw lock (serializes draws, heart updates, log writes)."""
+        lock = self._daily_draw_locks.get(guild_id)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._daily_draw_locks[guild_id] = lock
+        return lock
+
+    async def _resolve_daily_draw_guild(self) -> str | None:
+        """Find the single guild owning the configured draw channel (spec §6).
+
+        Prefers a previously seeded config row, then a live lookup across
+        connected guilds (cached channels first, one fetch_channel fallback).
+        """
+        try:
+            channel_id = int(os.environ.get("PRAYER_DRAW_CHANNEL_ID", DEFAULT_DRAW_CHANNEL_ID))
+        except ValueError:
+            log.error("Daily draw: PRAYER_DRAW_CHANNEL_ID is not a valid integer — loop disabled")
+            return None
+
+        row = self.db.fetchone(
+            "SELECT guild_id FROM daily_draw_config WHERE channel_id = ?",
+            (str(channel_id),),
+        )
+        if row is not None and self.get_guild(int(row["guild_id"])) is not None:
+            return str(row["guild_id"])
+
+        for guild in self.guilds:
+            channel = guild.get_channel(channel_id)
+            if channel is None:
+                with contextlib.suppress(discord.HTTPException):
+                    channel = await guild.fetch_channel(channel_id)
+            if channel is not None:
+                gid = str(guild.id)
+                get_or_seed_config(self.db, gid)  # seeds defaults on first sight
+                log.info("Daily draw: enabled for guild %s (channel %s)", gid, channel_id)
+                return gid
+        return None
+
+    async def _daily_draw_loop(self) -> None:
+        """Independent background loop: one draw message per local day (spec §7).
+
+        Mirrors `_voice_status_loop`. The due/catch-up/no-double-post decision
+        is the pure rule `bot.daily_draw_logic.is_daily_post_due`, evaluated in
+        the guild's configured timezone (Europe/Paris, DST-aware).
+        """
+        await self.wait_until_ready()
+
+        guild_id = await self._resolve_daily_draw_guild()
+        if guild_id is None:
+            log.warning("Daily draw: configured channel not found on any guild — loop disabled")
+            return
+
+        while not self.is_closed():
+            try:
+                await self._daily_draw_tick(guild_id)
+            except Exception:
+                log.exception("Error in daily draw loop")
+            await asyncio.sleep(60)
+
+    async def _daily_draw_tick(self, guild_id: str) -> None:
+        """One scheduler pass: post the day's message if it is due."""
+        cfg = get_or_seed_config(self.db, guild_id)
+        tz = pytz.timezone(cfg.timezone_name)
+        now_local = datetime.now(tz)
+        today_local = now_local.date().isoformat()
+        _message_id, last_post_date, _hearts = get_active_message(self.db, guild_id)
+
+        if not is_daily_post_due(now_local, cfg.post_hour, last_post_date):
+            return
+
+        # Bounded retries: never spam a missing/unwritable channel all day (§9).
+        date, attempts = self._daily_draw_failures.get(guild_id, (today_local, 0))
+        if date == today_local and attempts >= _DAILY_DRAW_MAX_RETRIES:
+            return
+
+        channel = self.get_channel(int(cfg.channel_id))
+        if channel is None or not isinstance(channel, discord.TextChannel):
+            log.warning("Daily draw: channel %s not found in guild %s", cfg.channel_id, guild_id)
+            self._bump_daily_draw_failure(guild_id, today_local)
+            return
+
+        button = discord.ui.Button(
+            style=discord.ButtonStyle.primary,
+            label=DAILY_DRAW_BUTTON_LABEL,
+            custom_id=DAILY_DRAW_BUTTON_CUSTOM_ID,
+        )
+        view = discord.ui.View()
+        view.add_item(button)
+        msg = await channel.send(content=cfg.base_text, view=view)
+        start_new_day(self.db, guild_id, str(msg.id), today_local)
+        self._daily_draw_failures.pop(guild_id, None)
+        log.info(
+            "Daily draw: posted message %s for %s (%s)",
+            msg.id,
+            today_local,
+            cfg.timezone_name,
+        )
+
+    def _bump_daily_draw_failure(self, guild_id: str, today_local: str) -> None:
+        date, attempts = self._daily_draw_failures.get(guild_id, (today_local, 0))
+        if date != today_local:
+            date, attempts = today_local, 0
+        self._daily_draw_failures[guild_id] = (date, attempts + 1)
+
+    # ------------------------------------------------------------------
+    # Daily draw button (issue #16, Coder 5 wiring integrated by Coder 4)
+    # ------------------------------------------------------------------
+
+    async def on_interaction(self, interaction: discord.Interaction) -> None:
+        """First component handler in this repo: the daily-draw ticket button.
+
+        Filters on the single static custom_id ``daily_draw:ticket``; every
+        other interaction passes through untouched (additive-only rule).
+        """
+        if interaction.type is not discord.InteractionType.component:
+            return
+        custom_id = (interaction.data or {}).get("custom_id")
+        if custom_id != DAILY_DRAW_BUTTON_CUSTOM_ID:
+            return
+        try:
+            # Spec §8: defer ephemeral FIRST; all replies are followups only.
+            await interaction.response.defer(ephemeral=True)
+            await self._handle_daily_draw_button(interaction)
+        except Exception:
+            log.exception("Daily draw button handler failed (guild=%s)", interaction.guild_id)
+            try:
+                if interaction.response.is_done():
+                    await interaction.followup.send(
+                        "Something went wrong with the draw. "
+                        "Please try again shortly.",
+                        ephemeral=True,
+                    )
+                else:
+                    await interaction.response.send_message(
+                        "Something went wrong with the draw. "
+                        "Please try again shortly.",
+                        ephemeral=True,
+                    )
+            except Exception:
+                log.exception("Daily draw error reply also failed")
+
+    @staticmethod
+    def _daily_draw_log_path() -> str:
+        return os.environ.get("PRAYER_DRAW_LOG_PATH", "./data/daily_draw_log.txt")
+
+    async def _handle_daily_draw_button(self, interaction: discord.Interaction) -> None:
+        """Draw flow per spec §8 + §9: cooldown check → selection → locked,
+        log-first critical section → ephemeral followup reply (deferred
+        upstream). A failed log write aborts the draw (no cooldown, no
+        heart, no winner reply) — spec §9.
+        """
+        from db import daily_draw as daily_draw_db  # db layer (Coder 4 module)
+
+        guild = interaction.guild
+        if guild is None or interaction.user is None:
+            return  # buttons only exist in the configured guild channel
+        guild_id = str(guild.id)
+
+        cfg = daily_draw_db.get_or_seed_config(self.db, guild_id)
+        if cfg is None or not cfg.target_role_id:
+            log.warning("Daily draw pressed in unconfigured guild %s — ignoring", guild_id)
+            return
+
+        now_utc = datetime.now(pytz.utc)
+
+        # (1) Cooldown check (stored UTC) — catpray reply, never a heart.
+        #     Degrade to a plain string if the emoji cannot be sent (§9).
+        last_draw = daily_draw_db.last_draw_at(self.db, guild_id, str(interaction.user.id))
+        if is_on_cooldown(last_draw, now_utc, cfg.cooldown_hours):
+            await self._send_daily_draw_cooldown_reply(interaction, cfg)
+            return
+
+        # (2) Selection: configured role's members, drawer excluded, bots allowed.
+        role = guild.get_role(int(cfg.target_role_id))
+        member_ids = [str(m.id) for m in role.members] if role is not None else []
+        drawee_id = pick_random_member(member_ids, interaction.user.id)
+        if drawee_id is None:
+            await interaction.followup.send(
+                "The draw is unavailable right now — no candidates found. Please try again later.",
+                ephemeral=True,
+            )
+            return  # no heart, no log line, cooldown NOT set
+        drawee = guild.get_member(int(drawee_id))
+
+        # (3) Critical section: serialize successful draws per guild so log
+        #     lines never interleave (spec §8.3). LOG FIRST (spec §9): the log
+        #     write is the durable proof of the draw — if it fails, nothing is
+        #     persisted (no cooldown, no heart) and no winner is announced.
+        lock = self._daily_draw_locks.setdefault(guild_id, asyncio.Lock())
+        async with lock:
+            # Re-check cooldown inside the lock: a double-click race must not
+            # produce two hearts from one user.
+            if is_on_cooldown(
+                daily_draw_db.last_draw_at(self.db, guild_id, str(interaction.user.id)),
+                now_utc,
+                cfg.cooldown_hours,
+            ):
+                await self._send_daily_draw_cooldown_reply(interaction, cfg)
+                return
+
+            message_id, post_date, heart_count = daily_draw_db.get_active_message(self.db, guild_id)
+            new_count = heart_count + 1
+            # Ensure the log directory exists BEFORE the log write
+            # (spec §9: a missing dir must abort the draw cleanly, not
+            # fail every draw on first run with a non-default path).
+            Path(self._daily_draw_log_path()).parent.mkdir(
+                parents=True, exist_ok=True
+            )
+            try:
+                append_draw_log(
+                    self._daily_draw_log_path(),
+                    interaction.user.id,
+                    getattr(interaction.user, "display_name", str(interaction.user)),
+                    drawee_id,
+                    getattr(drawee, "display_name", "unknown"),
+                    now_utc,
+                )
+            except Exception:
+                # Spec §9: do NOT complete the draw — no cooldown update, no
+                # heart, no winner reply. Lock released by the context manager.
+                log.error(
+                    "Daily draw log write failed (guild=%s) — draw aborted, nothing persisted",
+                    guild_id,
+                )
+                with contextlib.suppress(Exception):
+                    await interaction.followup.send(
+                        "Couldn't record the draw, please try again shortly.",
+                        ephemeral=True,
+                    )
+                return
+
+            # Log line is durable → now persist cooldown + heart (DB is the
+            # heart source of truth; content is rebuilt, never parsed).
+            daily_draw_db.set_last_draw(self.db, guild_id, str(interaction.user.id), now_utc)
+            daily_draw_db.update_hearts(self.db, guild_id, new_count)
+
+            # Message edit inside the lock (spec §8.3): two concurrent draws
+            # must not race their content edits.
+            with contextlib.suppress(Exception):
+                await self._edit_daily_draw_message(guild, cfg, message_id, post_date, new_count)
+
+        # (4) Ephemeral reply, exactly per spec.
+        await interaction.followup.send(
+            f"Your lucky draw today is <@{drawee_id}>!", ephemeral=True
+        )
+
+    async def _send_daily_draw_cooldown_reply(
+        self, interaction: discord.Interaction, cfg
+    ) -> None:
+        """Cooldown reply (§9): config catpray emoji, degrading to 🙏 if the
+        emoji can't be sent (unavailable in channel / wrong server)."""
+        try:
+            await interaction.followup.send(cfg.emoji_catpray, ephemeral=True)
+        except Exception:
+            log.warning("Daily draw: catpray emoji send failed — falling back to 🙏")
+            with contextlib.suppress(Exception):
+                await interaction.followup.send("🙏", ephemeral=True)
+
+    async def _edit_daily_draw_message(
+        self,
+        guild: discord.Guild,
+        cfg,
+        message_id: str | None,
+        post_date: str | None,
+        heart_count: int,
+    ) -> None:
+        """Edit the day's message content; if it is gone, post a fresh one and
+        re-point state at it WITHOUT resetting hearts (spec §9 self-heal: the
+        fresh message carries the current heart count; content is always
+        rebuilt from the DB heart_count, never from message text)."""
+        from db import daily_draw as daily_draw_db
+
+        channel = guild.get_channel(int(cfg.channel_id))
+        if channel is None:
+            channel = await guild.fetch_channel(int(cfg.channel_id))
+
+        content = build_message_text(cfg.base_text or DAILY_DRAW_BASE_TEXT, heart_count)
+        today = paris_local_date(datetime.now(pytz.utc), cfg.timezone_name).isoformat()
+
+        # Edit only TODAY's message; anything older (or deleted) is replaced by
+        # a fresh message of the day, re-pointing state with hearts preserved
+        # (repoint_active_message — NOT start_new_day, which resets hearts).
+        if message_id and post_date == today:
+            try:
+                msg = await channel.fetch_message(int(message_id))
+                if msg:
+                    await msg.edit(content=content)
+                    return
+            except Exception as exc:
+                log.warning("Daily draw message %s not editable (%s) — reposting",
+                            message_id, exc)
+
+        msg = await channel.send(content=content)
+        daily_draw_db.repoint_active_message(self.db, str(guild.id), str(msg.id))
 
     def _log_permissions(self, guild: discord.Guild, voice_channel_id: str | None) -> None:
         """Log the bot's permissions in the guild and target voice channel."""
