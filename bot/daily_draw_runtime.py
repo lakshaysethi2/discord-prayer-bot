@@ -1,7 +1,6 @@
 """Daily Draw v2 Discord runtime (issue #18).
 
-Patched onto PrayerBot by install(). Kept out of main.py so the v1 file
-can stay byte-stable except for a one-line hook.
+Patched onto PrayerBot by install() / hook_prayer_bot().
 """
 
 from __future__ import annotations
@@ -9,7 +8,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-import os
 from datetime import datetime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -47,6 +45,7 @@ from db.daily_draw import (
 
 log = logging.getLogger(__name__)
 _DAILY_DRAW_MAX_RETRIES = 5
+_HOOKED = False
 
 
 async def _daily_draw_loop(self) -> None:
@@ -321,3 +320,25 @@ def install(bot_cls):
     bot_cls._send_daily_draw_cooldown_reply = _send_daily_draw_cooldown_reply
     bot_cls._edit_daily_draw_message = _edit_daily_draw_message
     return bot_cls
+
+
+def hook_prayer_bot() -> None:
+    """Install v2 methods when PrayerBot subclasses discord.Client."""
+    global _HOOKED
+    if _HOOKED:
+        return
+    original = discord.Client.__init_subclass__
+
+    def _wrapped(cls, **kwargs):
+        if hasattr(original, "__func__"):
+            original.__func__(cls, **kwargs)
+        elif callable(original):
+            try:
+                original(cls, **kwargs)
+            except TypeError:
+                pass
+        if cls.__name__ == "PrayerBot":
+            install(cls)
+
+    discord.Client.__init_subclass__ = classmethod(_wrapped)
+    _HOOKED = True
