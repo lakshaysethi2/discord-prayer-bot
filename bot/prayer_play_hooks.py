@@ -1,7 +1,6 @@
 """Prayer playback wiring that #21 left for main.py.
 
-Patched onto PrayerBot by install() from the existing daily-draw hook so we
-do not rewrite bot/main.py (73k).
+Installed explicitly from bot/main.py after PrayerBot is defined (issue #26).
 """
 
 from __future__ import annotations
@@ -92,6 +91,8 @@ _STATUS_ORIG = None
 
 
 def install(bot_cls):
+    # Captures method originals in module globals. Do not call twice
+    # on the same class or wrappers nest.
     global _SETUP_ORIG, _START_ORIG, _STATUS_ORIG
     _SETUP_ORIG = bot_cls._setup_guild
     _START_ORIG = bot_cls._start_prayer_playback
