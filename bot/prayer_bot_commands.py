@@ -1,20 +1,16 @@
-"""Dashboard commands, VC status, and slash commands for PrayerBot."""
+"""Dashboard command loop and cache cleanup for PrayerBot."""
 from __future__ import annotations
 
 import asyncio
 import contextlib
 import logging
-from datetime import datetime, timedelta
 from pathlib import Path
-
-import discord
-import pytz
 
 from bot.apply_server import apply_server_config as live_apply
 from bot.state_framework import GuildScopedState
 from dashboard import commands as cmd_queue
 from db.models import PrayerType
-from db.prayers import cleanup_old_logs, get_audio_filename, get_guild_config, get_weekly_schedule
+from db.prayers import cleanup_old_logs
 
 log = logging.getLogger(__name__)
 TTS_DIR = Path("data/tts")

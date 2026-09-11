@@ -1,14 +1,12 @@
-"""Voice connect, TTS, and guild discovery for PrayerBot."""
+"""Voice connect and guild discovery for PrayerBot."""
 from __future__ import annotations
 
 import asyncio
 import contextlib
-import hashlib
 import logging
 from pathlib import Path
 
 import discord
-import edge_tts
 
 from bot.prayer_scheduler import PrayerScheduler
 from bot.state_framework import GuildScopedState

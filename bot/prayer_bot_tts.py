@@ -141,7 +141,7 @@ class PrayerBotTtsMixin:
         channel = guild.get_channel(int(cfg.logging_channel_id))
         if channel:
             with contextlib.suppress(Exception):
-                await channel.send(f"Log: {message}")
+                await channel.send(f"\U0001f4cb **Log:** {message}")
 
     async def _on_pre_prayer(self, guild_id: str) -> None:
         self._cancel_disconnect_task(guild_id)
