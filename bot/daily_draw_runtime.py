@@ -319,6 +319,8 @@ def install(bot_cls):
     bot_cls._handle_daily_draw_button = _handle_daily_draw_button
     bot_cls._send_daily_draw_cooldown_reply = _send_daily_draw_cooldown_reply
     bot_cls._edit_daily_draw_message = _edit_daily_draw_message
+    from bot.prayer_play_hooks import install as install_play
+    install_play(bot_cls)
     return bot_cls
 
 
