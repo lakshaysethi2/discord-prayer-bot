@@ -182,15 +182,14 @@ def start_new_draw_day(db: Database, guild_id: str, message_id: str, cycle_date,
 
 
 def repost_slot(db: Database, guild_id: str, message_id: str, slot_index: int) -> None:
+    """Update the live slot. Never INSERT a row with a NULL cycle date."""
     db.execute(
         """
-        INSERT INTO daily_draw_state (guild_id, active_message_id, active_slot_index)
-        VALUES (?, ?, ?)
-        ON CONFLICT(guild_id) DO UPDATE SET
-            active_message_id = excluded.active_message_id,
-            active_slot_index = excluded.active_slot_index
+        UPDATE daily_draw_state
+        SET active_message_id = ?, active_slot_index = ?
+        WHERE guild_id = ?
         """,
-        (guild_id, message_id, int(slot_index)),
+        (message_id, int(slot_index), guild_id),
     )
 
 
