@@ -4,6 +4,8 @@ The endpoint returns:
 {
   "status": "healthy" | "degraded" | "unhealthy",
   "database": "connected" | "disconnected",
+  "git_sha": "0f9d80d844024da2c0e77b778302cc8e8160504b" | "unknown",
+  "git_sha_short": "0f9d80d",
   "last_prayer_played_utc": "2026-07-31 07:00:05" | null,
   "hours_since_last_prayer": 7.4,
   "expected_max_gap_hours": 32.0,
@@ -11,18 +13,22 @@ The endpoint returns:
 }
 
 `stale` is true when no successful prayer has played for longer than the
-longest gap in the *enabled* schedule (plus a 1h buffer). The expected gap
-is computed from the actual schedule so e.g. days with no prayers (Sunday)
-don't cause false alarms.
+longest gap in the *enabled* schedule (plus a 1h buffer).
+
+`git_sha` comes from GIT_SHA / SOURCE_VERSION / GITHUB_SHA, else `git rev-parse HEAD`.
+Containers must bake GIT_SHA at build time (see Dockerfile + docker-compose).
 """
 
 from __future__ import annotations
 
+import os
+import subprocess
 from datetime import datetime, timezone
 
 from db.database import Database
 
 _STALE_BUFFER_HOURS = 1.0
+_SHA_ENV_KEYS = ("GIT_SHA", "SOURCE_VERSION", "GITHUB_SHA")
 
 
 def _now_utc() -> datetime:
@@ -36,11 +42,32 @@ def _parse_db_ts(value: str) -> datetime | None:
         return None
 
 
-def max_schedule_gap_hours(db: Database) -> float | None:
-    """Longest gap between consecutive enabled prayer slots (wrapping weekly).
+def running_git_sha() -> str:
+    for key in _SHA_ENV_KEYS:
+        val = (os.environ.get(key) or "").strip()
+        if val and val.lower() != "unknown":
+            return val
+    try:
+        out = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"],
+            stderr=subprocess.DEVNULL,
+            timeout=2,
+        )
+        sha = out.decode().strip()
+        if sha:
+            return sha
+    except Exception:
+        pass
+    return "unknown"
 
-    Returns None when there are no enabled schedules for any enabled guild.
-    """
+
+def git_identity() -> dict[str, str]:
+    sha = running_git_sha()
+    short = sha[:7] if sha != "unknown" else "unknown"
+    return {"git_sha": sha, "git_sha_short": short}
+
+
+def max_schedule_gap_hours(db: Database) -> float | None:
     rows = db.fetchall(
         """
         SELECT ps.day_of_week, ps.time_utc
@@ -71,7 +98,6 @@ def max_schedule_gap_hours(db: Database) -> float | None:
 
 
 def compute_health(db: Database) -> dict:
-    """Compute prayer freshness based on the last successful play + schedule."""
     row = db.fetchone(
         "SELECT MAX(played_at) AS last_played FROM prayer_logs WHERE success = 1"
     )
@@ -90,7 +116,7 @@ def compute_health(db: Database) -> dict:
             and hours_since > (max_gap + _STALE_BUFFER_HOURS)
         )
 
-    return {
+    body = {
         "status": "degraded" if stale else "healthy",
         "database": "connected",
         "last_prayer_played_utc": last_raw,
@@ -98,3 +124,5 @@ def compute_health(db: Database) -> dict:
         "expected_max_gap_hours": round(max_gap, 2) if max_gap is not None else None,
         "stale": stale,
     }
+    body.update(git_identity())
+    return body

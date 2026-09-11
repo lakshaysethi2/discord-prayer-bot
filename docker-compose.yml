@@ -2,7 +2,10 @@ version: "3.9"
 
 services:
   bot:
-    build: .
+    build:
+      context: .
+      args:
+        GIT_SHA: ${GIT_SHA:-unknown}
     container_name: prayer-bot
     volumes:
       - ./data:/app/data
@@ -12,11 +15,15 @@ services:
       - ADMIN_TOKEN=${ADMIN_TOKEN:-dev-token-change-me}
       - DATABASE_PATH=/app/data/prayer_bot.db
       - PYTHONPATH=/app
+      - GIT_SHA=${GIT_SHA:-unknown}
     restart: unless-stopped
     command: python bot/main.py
 
   dashboard:
-    build: .
+    build:
+      context: .
+      args:
+        GIT_SHA: ${GIT_SHA:-unknown}
     container_name: prayer-dashboard
     ports:
       - "8700:8000"
@@ -26,6 +33,7 @@ services:
       - DATABASE_PATH=/app/data/prayer_bot.db
       - PYTHONPATH=/app
       - ADMIN_TOKEN=${ADMIN_TOKEN:-dev-token-change-me}
+      - GIT_SHA=${GIT_SHA:-unknown}
     restart: unless-stopped
     command: uvicorn dashboard.app:app --host 0.0.0.0 --port 8000
 
