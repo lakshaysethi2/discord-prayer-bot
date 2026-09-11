@@ -79,7 +79,7 @@ class PrayerBotPlaybackMixin:
                     await self._cleanup_notification(guild_id, player)
                     with contextlib.suppress(Exception):
                         msg = await text_channel.send(
-                            f"**{prayer_type.value.title()} Prayer** is now playing. "
+                            f"\U0001f54c **{prayer_type.value.title()} Prayer** is now playing. "
                             f"Join <#{cfg.voice_channel_id}> to listen."
                         )
                         player.state.now_playing_message_id = msg.id
