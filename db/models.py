@@ -15,15 +15,7 @@ from datetime import datetime, time
 from enum import Enum
 from typing import Optional
 
-# -----------------------------------------------------------------------------
-# Combined DDL statements — idempotent `CREATE ... IF NOT EXISTS`.
-# Keeps `discord-radio` tables (tracks, watch_sessions, user_totals, bot_state,
-# monthly_snapshots, dashboard_commands, guild_configs, guild_channels) plus
-# prayer-specific tables (prayer_schedules, prayer_logs) and timezone columns.
-# -----------------------------------------------------------------------------
-
 SCHEMA: tuple[str, ...] = (
-    # ---- discord-radio framework: tracks -----------------------------------
     """
     CREATE TABLE IF NOT EXISTS tracks (
         track_id          TEXT PRIMARY KEY,
@@ -33,7 +25,6 @@ SCHEMA: tuple[str, ...] = (
         added_at          DATETIME DEFAULT CURRENT_TIMESTAMP
     )
     """,
-    # ---- watch_sessions ----------------------------------------------------
     """
     CREATE TABLE IF NOT EXISTS watch_sessions (
         session_id       INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -52,7 +43,6 @@ SCHEMA: tuple[str, ...] = (
     "CREATE INDEX IF NOT EXISTS idx_watch_sessions_user      ON watch_sessions(user_id)",
     "CREATE INDEX IF NOT EXISTS idx_watch_sessions_open      ON watch_sessions(user_id, left_at) WHERE left_at IS NULL",
     "CREATE INDEX IF NOT EXISTS idx_watch_sessions_joined_at ON watch_sessions(joined_at)",
-    # ---- user_totals -------------------------------------------------------
     """
     CREATE TABLE IF NOT EXISTS user_totals (
         user_id               TEXT PRIMARY KEY,
@@ -70,14 +60,12 @@ SCHEMA: tuple[str, ...] = (
     """,
     "CREATE INDEX IF NOT EXISTS idx_user_totals_alltime ON user_totals(total_seconds_alltime DESC)",
     "CREATE INDEX IF NOT EXISTS idx_user_totals_monthly ON user_totals(total_seconds_monthly DESC)",
-    # ---- bot_state ---------------------------------------------------------
     """
     CREATE TABLE IF NOT EXISTS bot_state (
         key   TEXT PRIMARY KEY,
         value TEXT
     )
     """,
-    # ---- monthly_snapshots -------------------------------------------------
     """
     CREATE TABLE IF NOT EXISTS monthly_snapshots (
         snapshot_id   INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -91,7 +79,6 @@ SCHEMA: tuple[str, ...] = (
     """,
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_monthly_snapshots_user_month ON monthly_snapshots(user_id, month_key)",
     "CREATE INDEX IF NOT EXISTS idx_monthly_snapshots_month ON monthly_snapshots(month_key)",
-    # ---- dashboard_commands (control-plane queue) --------------------------
     """
     CREATE TABLE IF NOT EXISTS dashboard_commands (
         command_id   INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -104,7 +91,6 @@ SCHEMA: tuple[str, ...] = (
     )
     """,
     "CREATE INDEX IF NOT EXISTS idx_dashboard_commands_pending ON dashboard_commands(executed_at) WHERE executed_at IS NULL",
-    # ---- guild_configs (multi-server) --------------------------------------
     """
     CREATE TABLE IF NOT EXISTS guild_configs (
         guild_id          TEXT PRIMARY KEY,
@@ -122,7 +108,6 @@ SCHEMA: tuple[str, ...] = (
         updated_at        DATETIME
     )
     """,
-    # ---- guild_channels -----------------------------------------------------
     """
     CREATE TABLE IF NOT EXISTS guild_channels (
         guild_id     TEXT NOT NULL,
@@ -133,20 +118,18 @@ SCHEMA: tuple[str, ...] = (
         PRIMARY KEY (guild_id, channel_id)
     )
     """,
-    # ---- prayer schedules (UTC time storage) ------------------------------
     """
     CREATE TABLE IF NOT EXISTS prayer_schedules (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         guild_id TEXT NOT NULL,
         day_of_week INTEGER NOT NULL CHECK(day_of_week BETWEEN 0 AND 6),
         prayer_type TEXT NOT NULL,
-        time_utc TEXT NOT NULL,  -- HH:MM in UTC (timezone rules: UTC base)
+        time_utc TEXT NOT NULL,
         enabled INTEGER NOT NULL DEFAULT 1,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(guild_id, day_of_week, time_utc)
     )
     """,
-    # ---- prayer logs -------------------------------------------------------
     """
     CREATE TABLE IF NOT EXISTS prayer_logs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -158,7 +141,6 @@ SCHEMA: tuple[str, ...] = (
         FOREIGN KEY(schedule_id) REFERENCES prayer_schedules(id) ON DELETE CASCADE
     )
     """,
-    # ---- voice_session_logs (who joined when) ------------------------------
     """
     CREATE TABLE IF NOT EXISTS voice_session_logs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -170,7 +152,6 @@ SCHEMA: tuple[str, ...] = (
         left_at TIMESTAMP,
         duration_seconds INTEGER
     )""",
-    # ---- daily draw (issue #16): config + day state + per-user cooldowns ---
     """
     CREATE TABLE IF NOT EXISTS daily_draw_config (
         guild_id        TEXT PRIMARY KEY,
@@ -179,22 +160,18 @@ SCHEMA: tuple[str, ...] = (
         base_text       TEXT NOT NULL,
         emoji_catpray   TEXT NOT NULL,
         cooldown_hours  INTEGER NOT NULL DEFAULT 18,
-        post_hour       INTEGER NOT NULL DEFAULT 7,   -- 0-23
+        post_hour       INTEGER NOT NULL DEFAULT 7,
         timezone_name   TEXT NOT NULL DEFAULT 'Europe/Paris'
     )
     """,
-    # Tracks the currently-active message of the day per guild. Hearts are an
-    # integer count — message content is rebuilt from base text, never parsed.
     """
     CREATE TABLE IF NOT EXISTS daily_draw_state (
         guild_id        TEXT PRIMARY KEY,
         active_message_id TEXT,
-        active_post_local_date TEXT,  -- 'YYYY-MM-DD' in the configured tz (Europe/Paris)
+        active_post_local_date TEXT,
         heart_count     INTEGER NOT NULL DEFAULT 0
     )
     """,
-    # Per-user cooldown (default 18h); last_draw_at stored as UTC ISO
-    # (repo convention: UTC, no tz suffix).
     """
     CREATE TABLE IF NOT EXISTS daily_draw_cooldowns (
         guild_id   TEXT NOT NULL,
@@ -227,17 +204,13 @@ PRAYER_AUDIO_MAP = {
 }
 
 
-# -----------------------------------------------------------------------------
-# Row dataclasses
-# -----------------------------------------------------------------------------
-
 @dataclass(slots=True)
 class PrayerSchedule:
     id: int
     guild_id: str
-    day_of_week: int  # 0=Monday ... 6=Sunday
+    day_of_week: int
     prayer_type: PrayerType
-    time_utc: time    # stored as UTC per timezone rules
+    time_utc: time
     enabled: bool = True
     created_at: Optional[datetime] = None
 
@@ -278,10 +251,6 @@ class ChannelRow:
     parent_id: str | None = None
 
 
-# -----------------------------------------------------------------------------
-# Bot state keys (from discord-radio framework)
-# -----------------------------------------------------------------------------
-
 class BotStateKey:
     CURRENT_TRACK_ID = "current_track_id"
     PLAYBACK_POSITION_SECONDS = "playback_position_seconds"
@@ -298,7 +267,6 @@ BOT_STATE_KEYS: frozenset[str] = frozenset(
     v for k, v in vars(BotStateKey).items() if not k.startswith("_") and isinstance(v, str)
 )
 
-# Milestone thresholds — in hours. Column names must match user_totals schema.
 MILESTONES: tuple[tuple[int, str], ...] = (
     (5, "milestone_5h"),
     (10, "milestone_10h"),

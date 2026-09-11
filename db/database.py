@@ -43,7 +43,7 @@ class Database:
             self._conn = sqlite3.connect(
                 self.path,
                 detect_types=sqlite3.PARSE_DECLTYPES,
-                isolation_level=None,  # autocommit; we manage txns explicitly
+                isolation_level=None,
                 check_same_thread=False,
                 timeout=30.0,
             )
@@ -62,22 +62,17 @@ class Database:
             self._configure_pragmas()
             self.migrate()
         except Exception:
-            # Don't leak the connection if migration blows up on open.
             self._conn.close()
             raise
 
-    # -------------------------------------------------------- context manager
     def __enter__(self) -> Database:
         return self
 
     def __exit__(self, *_exc_info: object) -> None:
         self.close()
 
-    # ------------------------------------------------------------------ setup
     def _configure_pragmas(self) -> None:
         cur = self._conn.cursor()
-        # WAL survives crashes better and allows readers to not block writers.
-        # :memory: doesn't support WAL — skip gracefully.
         if self.path != ":memory:":
             cur.execute("PRAGMA journal_mode=WAL")
         cur.execute("PRAGMA synchronous=NORMAL")
@@ -92,19 +87,21 @@ class Database:
             try:
                 for stmt in SCHEMA:
                     cur.execute(stmt)
-                # Backfill: add timezone_offset_hours to guild_configs if missing
                 self._ensure_column(cur, "guild_configs", "timezone_offset_hours", "REAL DEFAULT 0.0")
                 self._ensure_column(cur, "guild_configs", "timezone_name", "TEXT DEFAULT 'UTC'")
-                # Backfill: add tts_voice to guild_configs if missing
                 self._ensure_column(cur, "guild_configs", "tts_voice", "TEXT DEFAULT 'en-US-GuyNeural'")
                 self._ensure_column(cur, "guild_configs", "pre_join_minutes", "INTEGER DEFAULT 10")
                 self._ensure_column(cur, "guild_configs", "post_stay_minutes", "INTEGER DEFAULT 5")
                 self._ensure_column(cur, "guild_configs", "status_blip_enabled", "BOOLEAN DEFAULT 0")
                 self._ensure_column(cur, "guild_configs", "logging_channel_id", "TEXT")
-                # Backfill: add guild_id to watch_sessions if missing
                 self._ensure_column(cur, "watch_sessions", "guild_id", "TEXT NOT NULL DEFAULT ''")
                 self._ensure_column(cur, "guild_channels", "parent_id", "TEXT")
-                # Migration: rename "time" to "time_utc" in prayer_schedules for existing DBs
+                self._ensure_column(cur, "daily_draw_state", "active_cycle_date", "TEXT")
+                self._ensure_column(cur, "daily_draw_state", "active_slot_index", "INTEGER")
+                self._ensure_column(cur, "daily_draw_state", "archive_message_id", "TEXT")
+                self._ensure_column(
+                    cur, "daily_draw_state", "archive_button_removed", "INTEGER DEFAULT 0"
+                )
                 self._ensure_column(cur, "prayer_schedules", "time_utc", "TEXT")
                 existing_cols = {row["name"] for row in cur.execute("PRAGMA table_info(prayer_schedules)").fetchall()}
                 if "time" in existing_cols and "time_utc" in existing_cols:
@@ -119,9 +116,7 @@ class Database:
         if column not in existing:
             cur.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
-    # -------------------------------------------------------------- primitives
     def execute(self, sql: str, params: tuple | dict = ()) -> sqlite3.Cursor:
-        """Execute a single statement under the write lock."""
         with self._lock:
             return self._conn.execute(sql, params)
 
@@ -139,12 +134,6 @@ class Database:
 
     @contextmanager
     def transaction(self) -> Iterator[sqlite3.Cursor]:
-        """Wrap a block of writes in an explicit transaction.
-
-        Because we opened the connection in autocommit (`isolation_level=None`)
-        we begin the transaction manually. Rollback on exception, commit on
-        clean exit.
-        """
         with self._lock:
             cur = self._conn.cursor()
             cur.execute("BEGIN IMMEDIATE")
@@ -158,7 +147,6 @@ class Database:
             finally:
                 cur.close()
 
-    # ------------------------------------------------------------ bot_state I/O
     def set_state(self, key: str, value: str | int | float | bool | None) -> None:
         v = "" if value is None else str(value)
         self.execute(
@@ -188,6 +176,6 @@ class Database:
         with self._lock:
             self._conn.close()
 
+
 def connect(path: str | os.PathLike[str] | None = None) -> Database:
-    """Convenience shim so callers can write `db.connect()`."""
     return Database(path)
