@@ -137,9 +137,13 @@ class PrayerBotStatusMixin:
             await interaction.response.defer(ephemeral=True)
             success = await self._start_prayer_playback(guild_id, pt, filename, is_adhoc=True)
             if success:
-                await interaction.followup.send(f"\U0001f54c Playing **{pt.value.title()}** prayer.")
+                await interaction.followup.send(
+                    f"🕌 Playing **{pt.value.title()}** prayer."
+                )
             else:
-                await interaction.followup.send("\u274c Failed to start prayer. Please check if I have voice permissions.")
+                await interaction.followup.send(
+                    "❌ Failed to start prayer. Please check if I have voice permissions."
+                )
 
         @self.tree.command(name="exit", description="Stop the current prayer and leave the voice channel")
         @discord.app_commands.default_permissions(manage_guild=True)
@@ -149,11 +153,15 @@ class PrayerBotStatusMixin:
             await interaction.response.defer(ephemeral=True)
             result = await self._handle_command("disconnect", {"guild_id": guild_id})
             if result == "ok:disconnected":
-                await interaction.followup.send("\U0001f44b Disconnected and stopped any active prayer.")
+                await interaction.followup.send(
+                    "👋 Disconnected and stopped any active prayer."
+                )
             elif result == "ok:not_connected":
-                await interaction.followup.send("\u26a0\ufe0f Not currently connected to a voice channel.")
+                await interaction.followup.send(
+                    "⚠️ Not currently connected to a voice channel."
+                )
             else:
-                await interaction.followup.send(f"\u274c Failed to disconnect: {result}")
+                await interaction.followup.send(f"❌ Failed to disconnect: {result}")
 
         @self.tree.command(name="next", description="Find out when the next prayer is scheduled")
         @discord.app_commands.guild_only()
@@ -161,7 +169,10 @@ class PrayerBotStatusMixin:
             guild_id = str(interaction.guild_id)
             info = self._get_next_prayer_info(guild_id)
             if not info:
-                await interaction.response.send_message("\U0001f4c5 No prayers are currently scheduled for this server.", ephemeral=True)
+                await interaction.response.send_message(
+                    "📅 No prayers are currently scheduled for this server.",
+                    ephemeral=True,
+                )
                 return
             sched = info["schedule"]
             dt = info["datetime"]
@@ -175,7 +186,7 @@ class PrayerBotStatusMixin:
             countdown = f"{hours}h {remainder}m" if hours > 0 else f"{remainder}m"
             tradition = sched.prayer_type.value.title()
             embed = discord.Embed(
-                title=f"\U0001f54c Next Prayer: {tradition}",
+                title=f"🕌 Next Prayer: {tradition}",
                 description=f"The next recitation will begin in **{countdown}**.",
                 color=discord.Color.blue(),
             )
@@ -187,12 +198,12 @@ class PrayerBotStatusMixin:
         @self.tree.command(name="help", description="Show all available commands for the Prayer Bot")
         async def help_command(interaction: discord.Interaction):
             embed = discord.Embed(
-                title="\U0001f54c Prayer Bot Help",
+                title="🕌 Prayer Bot Help",
                 description="I play scheduled and adhoc prayer recitations in voice channels.",
                 color=discord.Color.blue(),
             )
             embed.add_field(
-                name="\U0001f4d6 Public Commands",
+                name="📖 Public Commands",
                 value=(
                     "`/start [tradition]` - Trigger an immediate adhoc prayer\n"
                     "`/next` - See when the next prayer is scheduled (Ephemeral)\n"
@@ -201,12 +212,12 @@ class PrayerBotStatusMixin:
                 inline=False,
             )
             embed.add_field(
-                name="\U0001f6e1\ufe0f Admin Commands (Manage Server required)",
+                name="🛡️ Admin Commands (Manage Server required)",
                 value="`/exit` - Stop playback and make the bot leave voice",
                 inline=False,
             )
             embed.add_field(
-                name="\U0001f310 Dashboard",
+                name="🌐 Dashboard",
                 value="Admins can configure schedules and settings at: https://prayer-bot-dnd.lak.nz",
                 inline=False,
             )
