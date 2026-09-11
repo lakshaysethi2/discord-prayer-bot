@@ -182,7 +182,12 @@ def start_new_draw_day(db: Database, guild_id: str, message_id: str, cycle_date,
 
 
 def repost_slot(db: Database, guild_id: str, message_id: str, slot_index: int) -> None:
-    """Update the live slot. Never INSERT a row with a NULL cycle date."""
+    """Point the live slot at a new message id. UPDATE-only.
+
+    Safe only while no code path DELETEs daily_draw_state rows. An INSERT
+    here would create a row with NULL active_cycle_date. If this UPDATE
+    matches zero rows, the caller has a state desync — log and investigate.
+    """
     db.execute(
         """
         UPDATE daily_draw_state
