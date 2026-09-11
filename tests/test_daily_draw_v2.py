@@ -238,3 +238,13 @@ def test_due_slot_index_at_known_hours():
     assert due_slot_index(_local(2026, 9, 10, 18, 0)) == 2
     assert due_slot_index(_local(2026, 9, 10, 22, 0)) == 3
     assert due_slot_index(_local(2026, 9, 11, 3, 0)) == 4
+
+
+def test_same_draw_day_rejects_missing_cycle():
+    assert not same_draw_day(None, _local(2026, 9, 11, 8, 0))
+
+
+def test_format_cooldown_reply_under_one_minute():
+    emoji = "<:catpray:1501495634887442533>"
+    text = format_cooldown_reply(emoji, 59)
+    assert text == f"{emoji} 59s"
