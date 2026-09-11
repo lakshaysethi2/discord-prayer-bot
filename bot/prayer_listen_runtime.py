@@ -188,6 +188,9 @@ def _setup_slash_commands(self) -> None:
 
 
 def install(bot_cls):
+    """Wrap listen/leaderboard methods. Safe to call twice on the same class."""
+    if getattr(bot_cls, "_listen_hooks_installed", False):
+        return bot_cls
     global _START_ORIG, _VOICE_ORIG, _SLASH_ORIG, _READY_ORIG, _FINISH_FACTORY_ORIG
     _START_ORIG = bot_cls._start_prayer_playback
     _VOICE_ORIG = bot_cls.on_voice_state_update
@@ -199,4 +202,5 @@ def install(bot_cls):
     bot_cls._setup_slash_commands = _setup_slash_commands
     bot_cls.on_ready = on_ready
     bot_cls._make_schedule_disconnect = _make_schedule_disconnect
+    bot_cls._listen_hooks_installed = True
     return bot_cls

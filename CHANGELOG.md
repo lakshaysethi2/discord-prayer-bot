@@ -5,6 +5,8 @@ All notable changes to the Discord Prayer Bot.
 ## [Unreleased]
 
 ### Added
+- Wiring tests pin v2 methods on `DailyDrawV2Mixin`, play-hook wrappers (including `_update_all_voice_statuses`), and the absence of `hook_prayer_bot`.
+- GitHub Actions workflow runs `pytest tests/ -q` on pull requests and `main`.
 - **The 91st Psalm**: Added Psalm 91 recitation audio (`psalm_91`), `/start` slash command choice, and dashboard scheduling support.
 - `dashboard/health.py` — `/health` freshness endpoint for uptime monitoring (Gatus). Computes `stale` from the enabled schedule's max gap, so days without scheduled prayers (e.g. Sunday) don't false-alarm.
 - **10-minute pre-join**: Bot now enters the voice channel 10 minutes before scheduled prayer.
@@ -21,6 +23,9 @@ All notable changes to the Discord Prayer Bot.
 - **Detailed Behavior Spec**: Created `BOT_BEHAVIOR.md` describing every aspect of the bot's lifecycle.
 
 ### Changed
+- Daily Draw v2 is wired via an explicit `DailyDrawV2Mixin` base class on `PrayerBot` (issue #26). Import-time draw hooks (`hook_prayer_bot` / `__init_subclass__`) are gone.
+- `bot/main.py` split into focused mixins: `prayer_bot_{voice,tts,playback,commands,status}` composed by `PrayerBotRuntimeMixin`.
+- Play hooks install explicitly after the class (`install_play_hooks(PrayerBot)`), with an idempotency flag so a second call does not nest wrappers.
 - **Improved Adhoc Flow**: Manual starts now use a respectful sequence (5s pause -> Announcement -> 5s pause -> Recitation).
 - **Restart Resilience**: Bot now checks a range (next 10m) on startup to ensure it joins even if it starts late.
 - **Volume Consistency**: Prayer volume boost no longer applies to TTS greetings (fixed at 100%).
@@ -32,6 +37,8 @@ All notable changes to the Discord Prayer Bot.
 - **Scheduler Precision**: 30-second check loop with date-scoped pre-join markers to prevent double-play on restarts.
 
 ### Fixed
+- Stale-draw button reply no longer ends with a dangling colon when no active message exists; it now says a new draw will be posted shortly.
+- `repost_slot` is UPDATE-only, so `active_cycle_date` can never be written NULL by a mid-cycle repost.
 - Fixed `403 Forbidden` error when setting voice status while disconnected (now uses join-set-leave blip).
 - Fixed a bug where saving server settings would clobber the timezone offset.
 - Fixed `NameError` in greeting logic due to missing imports.
@@ -52,7 +59,6 @@ All notable changes to the Discord Prayer Bot.
 - Public view shows empty even when enabled schedules exist — now filters enabled schedules server-side before passing to template
 - `upsert_schedule` ON CONFLICT target now matches schema constraint (`guild_id, day_of_week, time_utc`) instead of referencing `prayer_type`
 - Test assertion in `test_routes.py` updated to match actual template output
-
 
 ### Added
 - Watchdog check in PrayerScheduler: monitors voice connection during active prayers and auto-rejoins if missing

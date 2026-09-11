@@ -176,12 +176,3 @@ def seconds_until_next_post(
     if target <= now_local:
         target += timedelta(days=1)
     return (target - now_local).total_seconds()
-
-
-# Wire v2 tick/handler onto PrayerBot when this module is imported from main.
-# Guarded so unit tests that lack discord.py keep collecting.
-try:
-    from bot.daily_draw_runtime import hook_prayer_bot
-    hook_prayer_bot()
-except Exception:
-    pass
