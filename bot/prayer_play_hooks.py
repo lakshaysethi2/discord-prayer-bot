@@ -91,8 +91,9 @@ _STATUS_ORIG = None
 
 
 def install(bot_cls):
-    # Captures method originals in module globals. Do not call twice
-    # on the same class or wrappers nest.
+    """Wrap PrayerBot methods. Safe to call twice on the same class."""
+    if getattr(bot_cls, "_play_hooks_installed", False):
+        return bot_cls
     global _SETUP_ORIG, _START_ORIG, _STATUS_ORIG
     _SETUP_ORIG = bot_cls._setup_guild
     _START_ORIG = bot_cls._start_prayer_playback
@@ -102,6 +103,7 @@ def install(bot_cls):
     bot_cls._setup_guild = _setup_guild
     bot_cls._start_prayer_playback = _start_prayer_playback
     bot_cls._update_all_voice_statuses = _update_all_voice_statuses
+    bot_cls._play_hooks_installed = True
     from bot.prayer_listen_runtime import install as install_listen
     install_listen(bot_cls)
     return bot_cls
