@@ -180,6 +180,37 @@ SCHEMA: tuple[str, ...] = (
         PRIMARY KEY (guild_id, user_id)
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS prayer_listen_sessions (
+        session_id       INTEGER PRIMARY KEY AUTOINCREMENT,
+        guild_id         TEXT NOT NULL,
+        user_id          TEXT NOT NULL,
+        username         TEXT NOT NULL,
+        server_nickname  TEXT,
+        joined_at        DATETIME NOT NULL,
+        left_at          DATETIME,
+        duration_seconds INTEGER,
+        checkpointed_at  DATETIME,
+        is_complete      INTEGER NOT NULL DEFAULT 0
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_pls_open ON prayer_listen_sessions(guild_id, user_id, left_at)",
+    "CREATE INDEX IF NOT EXISTS idx_pls_guild_joined ON prayer_listen_sessions(guild_id, joined_at)",
+    """
+    CREATE TABLE IF NOT EXISTS prayer_listen_totals (
+        guild_id              TEXT NOT NULL,
+        user_id               TEXT NOT NULL,
+        username              TEXT NOT NULL,
+        server_nickname       TEXT,
+        total_seconds_alltime INTEGER NOT NULL DEFAULT 0,
+        total_seconds_weekly  INTEGER NOT NULL DEFAULT 0,
+        week_key              TEXT,
+        last_updated          DATETIME,
+        PRIMARY KEY (guild_id, user_id)
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_plt_guild_alltime ON prayer_listen_totals(guild_id, total_seconds_alltime DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_plt_guild_weekly ON prayer_listen_totals(guild_id, total_seconds_weekly DESC)",
 )
 
 
