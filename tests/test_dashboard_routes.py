@@ -16,6 +16,10 @@ def test_health_check():
     assert body["database"] == "connected"
     assert "last_prayer_played_utc" in body
     assert "stale" in body
+    assert "git_sha" in body
+    assert "git_sha_short" in body
+    assert body["git_sha"]
+    assert body["git_sha_short"]
 
 def test_bulk_action_disable_all():
     # This just tests if the route exists and requires auth
