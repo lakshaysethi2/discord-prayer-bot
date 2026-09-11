@@ -73,8 +73,6 @@ async def _start_prayer_playback(self, guild_id: str, prayer_type, filename: str
 
 async def _update_all_voice_statuses(self) -> None:
     await _STATUS_ORIG(self)
-    # Original finally disconnects a blip VC even during pre-join. Rejoin if
-    # we are inside the pre-join window and the bot dropped.
     for guild in list(self.guilds):
         guild_id = str(guild.id)
         scheduler = self.schedulers.get(guild_id)
@@ -103,4 +101,6 @@ def install(bot_cls):
     bot_cls._setup_guild = _setup_guild
     bot_cls._start_prayer_playback = _start_prayer_playback
     bot_cls._update_all_voice_statuses = _update_all_voice_statuses
+    from bot.prayer_listen_runtime import install as install_listen
+    install_listen(bot_cls)
     return bot_cls
