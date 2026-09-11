@@ -4,7 +4,18 @@ All notable changes to the Discord Prayer Bot.
 
 ## [Unreleased]
 
+### Changed
+- Daily Draw v2 is wired via an explicit `DailyDrawV2Mixin` base class on `PrayerBot` (issue #26). Import-time draw hooks (`hook_prayer_bot` / `__init_subclass__`) are gone.
+- `bot/main.py` split into focused mixins: `prayer_bot_{voice,tts,playback,commands,status}` composed by `PrayerBotRuntimeMixin`.
+- Play hooks install explicitly after the class (`install_play_hooks(PrayerBot)`), with an idempotency flag so a second call does not nest wrappers.
+
+### Fixed
+- Stale-draw button reply no longer ends with a dangling colon when no active message exists; it now says a new draw will be posted shortly.
+- `repost_slot` is UPDATE-only, so `active_cycle_date` can never be written NULL by a mid-cycle repost.
+
 ### Added
+- Wiring tests pin v2 methods on `DailyDrawV2Mixin`, play-hook wrappers (including `_update_all_voice_statuses`), and the absence of `hook_prayer_bot`.
+- GitHub Actions workflow runs `pytest tests/ -q` on pull requests and `main`.
 - **The 91st Psalm**: Added Psalm 91 recitation audio (`psalm_91`), `/start` slash command choice, and dashboard scheduling support.
 - `dashboard/health.py` — `/health` freshness endpoint for uptime monitoring (Gatus). Computes `stale` from the enabled schedule's max gap, so days without scheduled prayers (e.g. Sunday) don't false-alarm.
 - **10-minute pre-join**: Bot now enters the voice channel 10 minutes before scheduled prayer.

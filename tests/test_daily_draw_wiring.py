@@ -36,8 +36,18 @@ def test_prayer_play_hooks_still_installed(monkeypatch):
     import bot.main
 
     assert bot.main.PrayerBot._setup_guild.__module__.endswith("prayer_play_hooks")
+    assert bot.main.PrayerBot._update_all_voice_statuses.__module__.endswith(
+        "prayer_play_hooks"
+    )
     assert bot.main.PrayerBot._start_prayer_playback.__module__.endswith(
         "prayer_listen_runtime"
     ) or bot.main.PrayerBot._start_prayer_playback.__module__.endswith(
         "prayer_play_hooks"
     )
+
+
+def test_import_time_draw_hook_is_gone():
+    import bot.daily_draw_runtime as runtime
+
+    assert not hasattr(runtime, "hook_prayer_bot")
+    assert not hasattr(runtime, "install")
