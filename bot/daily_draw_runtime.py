@@ -1,6 +1,7 @@
 """Daily Draw v2 Discord runtime (issue #18).
 
 DailyDrawV2Mixin — explicit base of PrayerBot (issue #26).
+Invariants: docs/daily_draw_invariants.md — do not simplify them away.
 """
 
 from __future__ import annotations
@@ -48,11 +49,19 @@ _DAILY_DRAW_MAX_RETRIES = 5
 
 
 class DailyDrawV2Mixin:
+    """Daily Draw v2 wiring.
+
+    Invariants (log-first, in-lock cooldown re-check, defer-then-followup,
+    UPDATE-only repost) are documented in docs/daily_draw_invariants.md —
+    do not 'simplify' them away. This is the repo's only on_interaction handler.
+    """
+
     async def on_interaction(self, interaction: discord.Interaction) -> None:
         """First component handler: daily-draw ticket button.
 
         Filters on the static custom_id ``daily_draw:ticket``; other
-        interactions pass through untouched.
+        interactions pass through untouched. Defer ephemeral FIRST; all
+        replies are followups (spec §8).
         """
         if interaction.type is not discord.InteractionType.component:
             return
@@ -81,6 +90,7 @@ class DailyDrawV2Mixin:
                 log.exception("Daily draw error reply also failed")
 
     async def _daily_draw_loop(self) -> None:
+        """60s cadence with bounded retries per cycle (spec §7/§9)."""
         await self.wait_until_ready()
         missing_logged = False
         while not self.is_closed():
@@ -205,6 +215,11 @@ class DailyDrawV2Mixin:
             log.warning("Daily draw: could not delete predecessor %s (%s)", message_id, exc)
 
     async def _handle_daily_draw_button(self, interaction: discord.Interaction) -> None:
+        """Log-first critical section (spec §8/§9).
+
+        A failed log write aborts the draw — no cooldown, no heart, no winner
+        reply. Cooldown is re-checked inside the lock (double-click race).
+        """
         from db import daily_draw as daily_draw_db
 
         guild = interaction.guild
@@ -295,6 +310,7 @@ class DailyDrawV2Mixin:
         )
 
     async def _send_daily_draw_cooldown_reply(self, interaction, cfg, last_draw=None, now_utc=None):
+        """catpray custom emoji first; on send failure degrade to folded-hands."""
         if now_utc is None:
             now_utc = datetime.now(pytz.utc)
         remaining = cooldown_remaining(last_draw, now_utc, cfg.cooldown_hours)
@@ -302,13 +318,17 @@ class DailyDrawV2Mixin:
         try:
             await interaction.followup.send(text, ephemeral=True)
         except Exception:
-            log.warning("Daily draw: catpray emoji send failed — falling back to \U0001f64f")
+            log.warning("Daily draw: catpray emoji send failed — falling back to 🙏")
             with contextlib.suppress(Exception):
                 await interaction.followup.send(
-                    format_cooldown_reply("\U0001f64f", remaining), ephemeral=True
+                    format_cooldown_reply("🙏", remaining), ephemeral=True
                 )
 
     async def _edit_daily_draw_message(self, guild, cfg, message_id, cycle_date, heart_count):
+        """Self-heal: repost keeps current hearts via repoint_active_message.
+
+        Never call start_new_day here — that resets hearts.
+        """
         from db import daily_draw as daily_draw_db
 
         channel = guild.get_channel(int(cfg.channel_id))
