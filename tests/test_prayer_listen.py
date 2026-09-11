@@ -30,7 +30,7 @@ def test_short_session_dropped(tmp_path):
         open_session(db, "g", "u", "Ada", None, at=t0)
         close_session(db, "g", "u", at=t0 + timedelta(seconds=10))
         assert db.fetchone("SELECT COUNT(*) AS n FROM prayer_listen_sessions")["n"] == 0
-        assert top_listeners(db, "g") == []
+        assert top_listeners(db, "g", now=t0) == []
 
 
 def test_session_credited_and_checkpoint_no_double(tmp_path):
@@ -42,6 +42,18 @@ def test_session_credited_and_checkpoint_no_double(tmp_path):
         rows = top_listeners(db, "g", "alltime")
         assert len(rows) == 1
         assert rows[0]["seconds"] == 70
+
+
+def test_open_session_is_idempotent(tmp_path):
+    with Database(str(tmp_path / "t.db")) as db:
+        t0 = datetime(2026, 9, 7, 12, 0, 0)
+        first = open_session(db, "g", "u", "Ada", None, at=t0)
+        second = open_session(db, "g", "u", "Ada", "Addie", at=t0 + timedelta(seconds=40))
+        assert first == second
+        close_session(db, "g", "u", at=t0 + timedelta(seconds=80))
+        rows = top_listeners(db, "g", "alltime")
+        assert rows[0]["seconds"] == 80
+        assert db.fetchone("SELECT COUNT(*) AS n FROM prayer_listen_sessions")["n"] == 1
 
 
 def test_orphan_close_uses_checkpoint(tmp_path):
@@ -56,17 +68,28 @@ def test_orphan_close_uses_checkpoint(tmp_path):
 
 def test_week_rollover_resets_weekly(tmp_path):
     with Database(str(tmp_path / "t.db")) as db:
-        t0 = datetime(2026, 9, 7, 12, 0, 0)  # ISO week 37
+        t0 = datetime(2026, 9, 7, 12, 0, 0)
         open_session(db, "g", "u", "Ada", None, at=t0)
         close_session(db, "g", "u", at=t0 + timedelta(seconds=40))
-        t1 = datetime(2026, 9, 14, 12, 0, 0)  # week 38
+        t1 = datetime(2026, 9, 14, 12, 0, 0)
         open_session(db, "g", "u", "Ada", None, at=t1)
         close_session(db, "g", "u", at=t1 + timedelta(seconds=50))
-        weekly = top_listeners(db, "g", "weekly")[0]["seconds"]
+        weekly = top_listeners(db, "g", "weekly", now=t1)[0]["seconds"]
         alltime = top_listeners(db, "g", "alltime")[0]["seconds"]
         assert weekly == 50
         assert alltime == 90
         assert week_key(t1) != week_key(t0)
+
+
+def test_weekly_query_ignores_previous_week(tmp_path):
+    with Database(str(tmp_path / "t.db")) as db:
+        t0 = datetime(2026, 9, 7, 12, 0, 0)  # week 37
+        open_session(db, "g", "u", "Ada", None, at=t0)
+        close_session(db, "g", "u", at=t0 + timedelta(seconds=40))
+        t1 = datetime(2026, 9, 14, 12, 0, 0)  # week 38
+        assert top_listeners(db, "g", "weekly", now=t1) == []
+        assert user_rank(db, "g", "u", "weekly", now=t1) is None
+        assert user_rank(db, "g", "u", "alltime")["seconds"] == 40
 
 
 def test_guild_isolation(tmp_path):

@@ -56,9 +56,10 @@ def open_session(db: Database, guild_id: str, user_id: str, username: str,
     )
     if existing:
         db.execute(
-            "UPDATE prayer_listen_sessions SET left_at=?, duration_seconds=0, is_complete=1 WHERE session_id=?",
-            (now.isoformat(sep=" "), existing["session_id"]),
+            "UPDATE prayer_listen_sessions SET username=?, server_nickname=? WHERE session_id=?",
+            (username, server_nickname, existing["session_id"]),
         )
+        return int(existing["session_id"])
     db.execute(
         """
         INSERT INTO prayer_listen_sessions
@@ -174,31 +175,63 @@ def close_guild_sessions(db: Database, guild_id: str, at: datetime | None = None
         close_session(db, guild_id, row["user_id"], at=at)
 
 
-def top_listeners(db: Database, guild_id: str, period: str = "weekly", limit: int = 10):
-    col = "total_seconds_weekly" if period == "weekly" else "total_seconds_alltime"
+def top_listeners(db: Database, guild_id: str, period: str = "weekly", limit: int = 10,
+                 now: datetime | None = None):
+    if period == "weekly":
+        key = week_key(now)
+        return db.fetchall(
+            """
+            SELECT user_id, username, server_nickname, total_seconds_weekly AS seconds, week_key
+            FROM prayer_listen_totals
+            WHERE guild_id=? AND week_key=? AND total_seconds_weekly > 0
+            ORDER BY total_seconds_weekly DESC
+            LIMIT ?
+            """,
+            (guild_id, key, limit),
+        )
     return db.fetchall(
-        f"""
-        SELECT user_id, username, server_nickname, {col} AS seconds, week_key
+        """
+        SELECT user_id, username, server_nickname, total_seconds_alltime AS seconds, week_key
         FROM prayer_listen_totals
-        WHERE guild_id=? AND {col} > 0
-        ORDER BY {col} DESC
+        WHERE guild_id=? AND total_seconds_alltime > 0
+        ORDER BY total_seconds_alltime DESC
         LIMIT ?
         """,
         (guild_id, limit),
     )
 
 
-def user_rank(db: Database, guild_id: str, user_id: str, period: str = "weekly"):
-    col = "total_seconds_weekly" if period == "weekly" else "total_seconds_alltime"
+def user_rank(db: Database, guild_id: str, user_id: str, period: str = "weekly",
+              now: datetime | None = None):
+    if period == "weekly":
+        key = week_key(now)
+        row = db.fetchone(
+            """
+            SELECT total_seconds_weekly AS seconds FROM prayer_listen_totals
+            WHERE guild_id=? AND user_id=? AND week_key=?
+            """,
+            (guild_id, user_id, key),
+        )
+        if row is None or int(row["seconds"]) <= 0:
+            return None
+        seconds = int(row["seconds"])
+        ahead = db.fetchone(
+            """
+            SELECT COUNT(*) AS n FROM prayer_listen_totals
+            WHERE guild_id=? AND week_key=? AND total_seconds_weekly > ?
+            """,
+            (guild_id, key, seconds),
+        )
+        return {"seconds": seconds, "rank": int(ahead["n"]) + 1}
     row = db.fetchone(
-        f"SELECT {col} AS seconds FROM prayer_listen_totals WHERE guild_id=? AND user_id=?",
+        "SELECT total_seconds_alltime AS seconds FROM prayer_listen_totals WHERE guild_id=? AND user_id=?",
         (guild_id, user_id),
     )
     if row is None or int(row["seconds"]) <= 0:
         return None
     seconds = int(row["seconds"])
     ahead = db.fetchone(
-        f"SELECT COUNT(*) AS n FROM prayer_listen_totals WHERE guild_id=? AND {col} > ?",
+        "SELECT COUNT(*) AS n FROM prayer_listen_totals WHERE guild_id=? AND total_seconds_alltime > ?",
         (guild_id, seconds),
     )
     return {"seconds": seconds, "rank": int(ahead["n"]) + 1}
