@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import logging
 import os
 import signal
@@ -15,10 +14,6 @@ from bot.daily_draw_runtime import DailyDrawV2Mixin
 from bot.prayer_bot_runtime import PrayerBotRuntimeMixin
 from bot.prayer_play_hooks import install as install_play_hooks
 from bot.state_framework import BotState
-from db.daily_draw import (
-    DEFAULT_CHANNEL_ID as DEFAULT_DRAW_CHANNEL_ID,
-    get_or_seed_config,
-)
 from db.database import Database
 
 if TYPE_CHECKING:
@@ -36,7 +31,9 @@ class PrayerBot(DailyDrawV2Mixin, PrayerBotRuntimeMixin, discord.Client):
         intents = discord.Intents.default()
         intents.voice_states = True
         intents.guilds = True
-        intents.message_content = False
+        # Privileged: required so mention-prefix commands can read the text
+        # after @bot. Also enable it in the Discord Developer Portal.
+        intents.message_content = True
         intents.members = True
         super().__init__(intents=intents)
 
@@ -59,33 +56,6 @@ class PrayerBot(DailyDrawV2Mixin, PrayerBotRuntimeMixin, discord.Client):
         self._daily_draw_locks: dict[str, asyncio.Lock] = {}
         self._daily_draw_task: asyncio.Task | None = None
         self._daily_draw_failures: dict[str, tuple[str, int]] = {}
-
-    async def _resolve_daily_draw_guild(self) -> str | None:
-        """Find the single guild owning the configured draw channel (spec §6)."""
-        try:
-            channel_id = int(os.environ.get("PRAYER_DRAW_CHANNEL_ID", DEFAULT_DRAW_CHANNEL_ID))
-        except ValueError:
-            log.error("Daily draw: PRAYER_DRAW_CHANNEL_ID is not a valid integer — loop disabled")
-            return None
-
-        row = self.db.fetchone(
-            "SELECT guild_id FROM daily_draw_config WHERE channel_id = ?",
-            (str(channel_id),),
-        )
-        if row is not None and self.get_guild(int(row["guild_id"])) is not None:
-            return str(row["guild_id"])
-
-        for guild in self.guilds:
-            channel = guild.get_channel(channel_id)
-            if channel is None:
-                with contextlib.suppress(discord.HTTPException):
-                    channel = await guild.fetch_channel(channel_id)
-            if channel is not None:
-                gid = str(guild.id)
-                get_or_seed_config(self.db, gid)
-                log.info("Daily draw: enabled for guild %s (channel %s)", gid, channel_id)
-                return gid
-        return None
 
     def _bump_daily_draw_failure(self, guild_id: str, today_local: str) -> None:
         date, attempts = self._daily_draw_failures.get(guild_id, (today_local, 0))

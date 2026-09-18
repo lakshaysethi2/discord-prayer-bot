@@ -5,6 +5,7 @@ All notable changes to the Discord Prayer Bot.
 ## [Unreleased]
 
 ### Added
+- `@bot setticketdrawchannel <channel-id>` mention-prefix command (issue #49) sets the per-guild daily-draw text channel at runtime. Manage Server required; not a slash command.
 - Wiring tests pin v2 methods on `DailyDrawV2Mixin`, play-hook wrappers (including `_update_all_voice_statuses`), and the absence of `hook_prayer_bot`.
 - GitHub Actions workflow runs `pytest tests/ -q` on pull requests and `main`.
 - **The 91st Psalm**: Added Psalm 91 recitation audio (`psalm_91`), `/start` slash command choice, and dashboard scheduling support.
@@ -23,6 +24,8 @@ All notable changes to the Discord Prayer Bot.
 - **Detailed Behavior Spec**: Created `BOT_BEHAVIOR.md` describing every aspect of the bot's lifecycle.
 
 ### Changed
+- Daily-draw loop resolves guilds from stored `daily_draw_config` rows so a runtime channel change is used on the next tick and after restart. `PRAYER_DRAW_CHANNEL_ID` remains seed-only.
+- Seed default `PRAYER_DRAW_CHANNEL_ID` / `DEFAULT_CHANNEL_ID` replaced with placeholder `0000000000000000000` (not a real snowflake).
 - Daily Draw v2 is wired via an explicit `DailyDrawV2Mixin` base class on `PrayerBot` (issue #26). Import-time draw hooks (`hook_prayer_bot` / `__init_subclass__`) are gone.
 - `bot/main.py` split into focused mixins: `prayer_bot_{voice,tts,playback,commands,status}` composed by `PrayerBotRuntimeMixin`.
 - Play hooks install explicitly after the class (`install_play_hooks(PrayerBot)`), with an idempotency flag so a second call does not nest wrappers.

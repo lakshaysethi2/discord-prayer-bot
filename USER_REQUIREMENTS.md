@@ -32,6 +32,7 @@ A Discord bot that plays scheduled prayer audio (6 traditions: Buddhist, Christi
 
 ### FR-4: Discord Interaction (Slash Commands & TTS)
 - **Slash Commands**: `/start` (adhoc play) and `/exit` (stop/disconnect) - Admin only (`manage_guild`)
+- **Mention-prefix (exception)**: `@bot setticketdrawchannel <channel-id>` sets the daily ticket-draw text channel at runtime. Manage Server required. Intentionally not a slash command (`/setticketdrawchannel` must not exist). DMs are ignored. Invalid/missing/non-text/no-Send-Messages channel IDs are rejected without writing. DB row wins over `PRAYER_DRAW_CHANNEL_ID` after first seed.
 - **TTS Greetings**: Bot greets users joining voice 10 min before prayer: *"Welcome [Name], thank you for coming, we will start the prayer in X minutes."* (5-second delay for connection stability)
 - **TTS Blessings**: Bot thanks users by name after prayer finishes: *"Thank you [Name A] and [Name B] for joining, god bless you."*
 - **Sequential Queue**: Greetings play one after another without audio overlaps

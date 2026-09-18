@@ -19,7 +19,12 @@ from bot.daily_draw_logic import (
 )
 from db.database import Database
 
-DEFAULT_CHANNEL_ID = "1377047809513099345"
+# Seed-only placeholder (not a real Discord channel). Used when
+# PRAYER_DRAW_CHANNEL_ID is unset on first-ever guild init. Once a
+# daily_draw_config row exists, that row wins; changing env does not
+# override it. Operators move the channel at runtime with
+# `@bot setticketdrawchannel <channel-id>`.
+DEFAULT_CHANNEL_ID = "0000000000000000000"
 DEFAULT_ROLE_ID = "1481586542911684648"
 DEFAULT_COOLDOWN_HOURS = 18
 DEFAULT_POST_HOUR = 7
@@ -54,6 +59,13 @@ def _env_str(name: str, default: str) -> str:
 
 
 def get_or_seed_config(db: Database, guild_id: str) -> DailyDrawConfig:
+    """Return this guild's draw config, seeding from env on first call only.
+
+    Precedence: an existing ``daily_draw_config`` row is the source of truth.
+    ``PRAYER_DRAW_CHANNEL_ID`` / ``DEFAULT_CHANNEL_ID`` (and the other
+    ``PRAYER_DRAW_*`` env vars) are seed-only for first-ever guild init.
+    Changing env after a row exists does not override it.
+    """
     row = db.fetchone(
         """
         SELECT guild_id, channel_id, target_role_id, base_text, emoji_catpray,

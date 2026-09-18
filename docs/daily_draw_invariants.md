@@ -5,6 +5,12 @@ These rules live in `DailyDrawV2Mixin` (`bot/daily_draw_runtime.py`). Do not "si
 ## `on_interaction` (spec §8)
 This is the repo's **only** component handler. discord.py exposes a single `on_interaction` hook; any future UI component must route through this method or add an explicit dispatcher.
 
+## `on_message` (issue #49)
+Mention-prefix commands live here (`@bot setticketdrawchannel <channel-id>`). This is not a component handler and must not replace or wrap `on_interaction`.
+
+## Guild resolution
+`_resolve_daily_draw_guild_ids` prefers stored `daily_draw_config` rows for guilds the bot is in. `PRAYER_DRAW_CHANNEL_ID` / `DEFAULT_CHANNEL_ID` seed first-ever guild init only; they do not override an existing row.
+
 Defer ephemeral **first**. After defer, every reply is a followup.
 
 ## `_daily_draw_loop` / `_daily_draw_tick` (spec §7 / §9)

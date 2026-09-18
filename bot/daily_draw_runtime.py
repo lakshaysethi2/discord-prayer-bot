@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -16,10 +17,12 @@ from zoneinfo import ZoneInfo
 import discord
 import pytz
 
+from bot.daily_draw_commands import process_setticketdrawchannel
 from bot.daily_draw_logic import (
     DAILY_DRAW_BASE_TEXT,
     DAILY_DRAW_BUTTON_CUSTOM_ID,
     DAILY_DRAW_BUTTON_LABEL,
+    DAILY_DRAW_CHANNEL_ENV,
     append_draw_log,
     build_message_text,
     cooldown_remaining,
@@ -35,9 +38,11 @@ from bot.daily_draw_v2 import (
     same_draw_day,
 )
 from db.daily_draw import (
+    DEFAULT_CHANNEL_ID,
     get_active,
     get_archive,
     get_or_seed_config,
+    list_configured_guilds,
     mark_archive_done,
     repost_slot,
     set_archive_pending,
@@ -55,6 +60,79 @@ class DailyDrawV2Mixin:
     UPDATE-only repost) are documented in docs/daily_draw_invariants.md —
     do not 'simplify' them away. This is the repo's only on_interaction handler.
     """
+
+    async def on_message(self, message: discord.Message) -> None:
+        """Mention-prefix commands. Currently only ``setticketdrawchannel``.
+
+        Does not touch :meth:`on_interaction` (the only component handler).
+        """
+        bot_user = self.user
+        if bot_user is None:
+            return
+        reply = await process_setticketdrawchannel(self.db, bot_user.id, message)
+        if reply is None:
+            return
+        channel = getattr(message, "channel", None)
+        send = getattr(channel, "send", None)
+        if not callable(send):
+            return
+        with contextlib.suppress(Exception):
+            await send(reply)
+
+    async def _resolve_daily_draw_guild_ids(self) -> list[str]:
+        """Guilds whose stored draw config should be ticked this pass.
+
+        DB row wins once seeded. ``PRAYER_DRAW_CHANNEL_ID`` and
+        ``DEFAULT_CHANNEL_ID`` are seed-only for first-ever guild init;
+        changing env after a guild row exists does not override the row.
+        After ``set_channel_id``, the next tick reads ``cfg.channel_id``
+        from SQLite via :func:`get_or_seed_config` — no in-memory cache.
+        """
+        ids: list[str] = []
+        seen: set[str] = set()
+        for cfg in list_configured_guilds(self.db):
+            gid = str(cfg.guild_id)
+            if gid in seen:
+                continue
+            try:
+                guild_int = int(gid)
+            except ValueError:
+                continue
+            if self.get_guild(guild_int) is not None:
+                ids.append(gid)
+                seen.add(gid)
+        if ids:
+            return ids
+        seeded = await self._seed_daily_draw_guild_from_env_channel()
+        return [seeded] if seeded else []
+
+    async def _resolve_daily_draw_guild(self) -> str | None:
+        """First configured guild, or None. Prefer :meth:`_resolve_daily_draw_guild_ids`."""
+        ids = await self._resolve_daily_draw_guild_ids()
+        return ids[0] if ids else None
+
+    async def _seed_daily_draw_guild_from_env_channel(self) -> str | None:
+        """First-init only: locate the seed env channel on a joined guild and seed."""
+        raw = os.environ.get(DAILY_DRAW_CHANNEL_ENV, DEFAULT_CHANNEL_ID)
+        try:
+            channel_id = int(raw)
+        except (TypeError, ValueError):
+            log.error("Daily draw: PRAYER_DRAW_CHANNEL_ID is not a valid integer — loop disabled")
+            return None
+        if channel_id <= 0:
+            return None
+
+        for guild in self.guilds:
+            channel = guild.get_channel(channel_id)
+            if channel is None:
+                with contextlib.suppress(discord.HTTPException):
+                    channel = await guild.fetch_channel(channel_id)
+            if channel is not None:
+                gid = str(guild.id)
+                get_or_seed_config(self.db, gid)
+                log.info("Daily draw: enabled for guild %s (channel %s)", gid, channel_id)
+                return gid
+        return None
 
     async def on_interaction(self, interaction: discord.Interaction) -> None:
         """First component handler: daily-draw ticket button.
@@ -95,8 +173,8 @@ class DailyDrawV2Mixin:
         missing_logged = False
         while not self.is_closed():
             try:
-                guild_id = await self._resolve_daily_draw_guild()
-                if guild_id is None:
+                guild_ids = await self._resolve_daily_draw_guild_ids()
+                if not guild_ids:
                     if not missing_logged:
                         log.warning(
                             "Daily draw: configured channel not found on any guild — will retry"
@@ -104,7 +182,8 @@ class DailyDrawV2Mixin:
                         missing_logged = True
                 else:
                     missing_logged = False
-                    await self._daily_draw_tick(guild_id)
+                    for guild_id in guild_ids:
+                        await self._daily_draw_tick(guild_id)
             except Exception:
                 log.exception("Error in daily draw loop")
             await asyncio.sleep(60)

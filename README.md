@@ -54,6 +54,9 @@ Feature prerequisites:
 2. The bot needs **Send Messages** in the target channel (editing its own
    message needs nothing extra).
 3. Config defaults (seeded into the DB on first run, overridable via
-   `.env.example` vars): channel `1377047809513099345`, key role id
+   `.env.example` vars): draw channel env is seed-only (placeholder
+   `0000000000000000000`; set a real channel with
+   `@bot setticketdrawchannel <channel-id>`), key role id
    `1481586542911684648`, catpray emoji `1501495634887442533`, cooldown 18h.
-   Re-verify these ids at deploy if the channel/role/emoji were ever recreated.
+   Re-verify role/emoji ids at deploy if they were ever recreated.
+   Once a `daily_draw_config` row exists, the DB row wins over env.
