@@ -5,7 +5,9 @@ All notable changes to the Discord Prayer Bot.
 ## [Unreleased]
 
 ### Added
-- `@bot setticketdrawchannel <channel-id>` mention-prefix command (issue #49) sets the per-guild daily-draw text channel at runtime. Manage Server required; not a slash command.
+- `/setticketdrawchannel` admin slash command with a text-channel dropdown (issue #49 follow-up). Manage Server required; public confirmation names the new channel.
+- Dashboard Servers page: **Daily draw channel** dropdown. Saving persists via `daily_draw_config.channel_id` (next tick / restart pick it up; env remains seed-only).
+
 - Wiring tests pin v2 methods on `DailyDrawV2Mixin`, play-hook wrappers (including `_update_all_voice_statuses`), and the absence of `hook_prayer_bot`.
 - GitHub Actions workflow runs `pytest tests/ -q` on pull requests and `main`.
 - **The 91st Psalm**: Added Psalm 91 recitation audio (`psalm_91`), `/start` slash command choice, and dashboard scheduling support.
@@ -24,6 +26,8 @@ All notable changes to the Discord Prayer Bot.
 - **Detailed Behavior Spec**: Created `BOT_BEHAVIOR.md` describing every aspect of the bot's lifecycle.
 
 ### Changed
+- Daily-draw channel is no longer a mention-prefix command. Message Content privileged intent is no longer requested (Server Members is still required for the role member list).
+- "Draw your ticket" button uses a persistent view (`timeout=None` + `add_view` on startup) so clicks keep working all day and after restart.
 - Daily-draw loop resolves guilds from stored `daily_draw_config` rows so a runtime channel change is used on the next tick and after restart. `PRAYER_DRAW_CHANNEL_ID` remains seed-only.
 - Seed default `PRAYER_DRAW_CHANNEL_ID` / `DEFAULT_CHANNEL_ID` replaced with placeholder `0000000000000000000` (not a real snowflake).
 - Daily Draw v2 is wired via an explicit `DailyDrawV2Mixin` base class on `PrayerBot` (issue #26). Import-time draw hooks (`hook_prayer_bot` / `__init_subclass__`) are gone.

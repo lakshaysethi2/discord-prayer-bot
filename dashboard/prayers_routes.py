@@ -491,6 +491,7 @@ async def servers_page(
     db: Database = Depends(get_db),
 ):
     from db.prayers import get_guild_config, get_guild_channels
+    from db.daily_draw import get_config as get_draw_config
     from dashboard.commands import recent
     # Show all guilds from guild_configs (auto-discovered)
     guild_rows = db.fetchall("SELECT guild_id, guild_name FROM guild_configs ORDER BY guild_id")
@@ -502,6 +503,8 @@ async def servers_page(
         voice_channels = [c for c in channels if c.channel_type == "voice"]
         # Allow both text channels and voice channels (for built-in text chat)
         text_channels = [c for c in channels if c.channel_type in ("text", "voice")]
+        draw_text_channels = [c for c in channels if c.channel_type == "text"]
+        draw_cfg = get_draw_config(db, gid)
         servers.append({
             "guild_id": gid,
             "guild_name": r["guild_name"] or gid,
@@ -509,12 +512,14 @@ async def servers_page(
             "voice_channel_id": cfg.voice_channel_id if cfg else None,
             "text_channel_id": cfg.text_channel_id if cfg else None,
             "logging_channel_id": cfg.logging_channel_id if cfg else None,
+            "draw_channel_id": draw_cfg.channel_id if draw_cfg else None,
             "tts_voice": cfg.tts_voice if cfg else "en-US-GuyNeural",
             "pre_join_minutes": cfg.pre_join_minutes if cfg else 10,
             "post_stay_minutes": cfg.post_stay_minutes if cfg else 5,
             "status_blip_enabled": cfg.status_blip_enabled if cfg else False,
             "voice_channels": voice_channels,
             "text_channels": text_channels,
+            "draw_text_channels": draw_text_channels,
         })
     # Current volume from bot_state (read from first guild if possible, else global)
     # TODO: Make the volume slider per-server in the UI to support multi-guild settings properly
@@ -523,6 +528,7 @@ async def servers_page(
         "servers.html",
         {
             "servers": servers,
+            "flash": request.query_params.get("flash"),
         },
     )
 
@@ -535,6 +541,7 @@ async def servers_update(
     voice_channel_id: str = Form(""),
     text_channel_id: str = Form(""),
     logging_channel_id: str = Form(""),
+    draw_channel_id: str = Form(""),
     tts_voice: str = Form("en-US-GuyNeural"),
     pre_join_minutes: int = Form(10),
     post_stay_minutes: int = Form(5),
@@ -563,6 +570,17 @@ async def servers_update(
         post_stay_minutes=post_stay_minutes,
         status_blip_enabled=blip_enabled,
     )
+    chosen_draw = (draw_channel_id or "").strip()
+    if chosen_draw:
+        from db.prayers import get_guild_channels
+        from db.daily_draw import set_channel_id
+        allowed = {
+            c.channel_id
+            for c in get_guild_channels(db, guild_id)
+            if c.channel_type == "text"
+        }
+        if chosen_draw in allowed:
+            set_channel_id(db, guild_id, chosen_draw)
     # Enqueue live apply (no restart) — task 3 / 4
     from dashboard.commands import enqueue
     enqueue(db, command="apply_server", requested_by="admin", payload={"guild_id": guild_id})

@@ -12,12 +12,12 @@ import logging
 import os
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 from zoneinfo import ZoneInfo
 
 import discord
 import pytz
 
-from bot.daily_draw_commands import process_setticketdrawchannel
 from bot.daily_draw_logic import (
     DAILY_DRAW_BASE_TEXT,
     DAILY_DRAW_BUTTON_CUSTOM_ID,
@@ -53,6 +53,31 @@ log = logging.getLogger(__name__)
 _DAILY_DRAW_MAX_RETRIES = 5
 
 
+class DailyDrawTicketView(discord.ui.View):
+    """Persistent "Draw your ticket" button (timeout=None, static custom_id).
+
+    Registered once via ``Client.add_view`` so clicks survive process restart.
+    The click is forwarded to the mixin handler; ``on_interaction`` is the
+    same path with an ``is_done()`` guard so the two cannot double-handle.
+    """
+
+    def __init__(self, on_click: Any | None = None) -> None:
+        super().__init__(timeout=None)
+        self._on_click = on_click
+        button = discord.ui.Button(
+            style=discord.ButtonStyle.primary,
+            label=DAILY_DRAW_BUTTON_LABEL,
+            custom_id=DAILY_DRAW_BUTTON_CUSTOM_ID,
+        )
+        button.callback = self._button_clicked
+        self.add_item(button)
+
+    async def _button_clicked(self, interaction: discord.Interaction) -> None:
+        if self._on_click is None:
+            return
+        await self._on_click(interaction)
+
+
 class DailyDrawV2Mixin:
     """Daily Draw v2 wiring.
 
@@ -60,24 +85,6 @@ class DailyDrawV2Mixin:
     UPDATE-only repost) are documented in docs/daily_draw_invariants.md —
     do not 'simplify' them away. This is the repo's only on_interaction handler.
     """
-
-    async def on_message(self, message: discord.Message) -> None:
-        """Mention-prefix commands. Currently only ``setticketdrawchannel``.
-
-        Does not touch :meth:`on_interaction` (the only component handler).
-        """
-        bot_user = self.user
-        if bot_user is None:
-            return
-        reply = await process_setticketdrawchannel(self.db, bot_user.id, message)
-        if reply is None:
-            return
-        channel = getattr(message, "channel", None)
-        send = getattr(channel, "send", None)
-        if not callable(send):
-            return
-        with contextlib.suppress(Exception):
-            await send(reply)
 
     async def _resolve_daily_draw_guild_ids(self) -> list[str]:
         """Guilds whose stored draw config should be ticked this pass.
@@ -143,12 +150,32 @@ class DailyDrawV2Mixin:
         """
         if interaction.type is not discord.InteractionType.component:
             return
-        custom_id = (interaction.data or {}).get("custom_id")
+        data = interaction.data or {}
+        custom_id = data.get("custom_id") if isinstance(data, dict) else getattr(data, "custom_id", None)
         if custom_id != DAILY_DRAW_BUTTON_CUSTOM_ID:
             return
+        await self._respond_daily_draw_button(interaction)
+
+    async def _respond_daily_draw_button(self, interaction: discord.Interaction) -> None:
+        """Defer-then-handle, shared by the persistent view and on_interaction.
+
+        If the view callback already responded, skip so we never double-draw.
+        """
+        gate: asyncio.Lock | None = getattr(self, "_draw_button_gate", None)
+        if gate is None:
+            gate = asyncio.Lock()
+            self._draw_button_gate = gate
+        async with gate:
+            if interaction.response.is_done():
+                return
+            try:
+                await interaction.response.defer(ephemeral=True)
+            except discord.InteractionResponded:
+                return
         try:
-            await interaction.response.defer(ephemeral=True)
             await self._handle_daily_draw_button(interaction)
+        except discord.InteractionResponded:
+            return
         except Exception:
             log.exception("Daily draw button handler failed (guild=%s)", interaction.guild_id)
             try:
@@ -189,14 +216,7 @@ class DailyDrawV2Mixin:
             await asyncio.sleep(60)
 
     def _daily_draw_view(self) -> discord.ui.View:
-        button = discord.ui.Button(
-            style=discord.ButtonStyle.primary,
-            label=DAILY_DRAW_BUTTON_LABEL,
-            custom_id=DAILY_DRAW_BUTTON_CUSTOM_ID,
-        )
-        view = discord.ui.View()
-        view.add_item(button)
-        return view
+        return DailyDrawTicketView(on_click=self._respond_daily_draw_button)
 
     async def _daily_draw_tick(self, guild_id: str) -> None:
         cfg = get_or_seed_config(self.db, guild_id)

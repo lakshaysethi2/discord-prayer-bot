@@ -56,7 +56,7 @@ Feature prerequisites:
 3. Config defaults (seeded into the DB on first run, overridable via
    `.env.example` vars): draw channel env is seed-only (placeholder
    `0000000000000000000`; set a real channel with
-   `@bot setticketdrawchannel <channel-id>`), key role id
+   `/setticketdrawchannel` or the dashboard Servers picker), key role id
    `1481586542911684648`, catpray emoji `1501495634887442533`, cooldown 18h.
    Re-verify role/emoji ids at deploy if they were ever recreated.
    Once a `daily_draw_config` row exists, the DB row wins over env.

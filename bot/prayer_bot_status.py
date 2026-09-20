@@ -145,6 +145,25 @@ class PrayerBotStatusMixin:
                     "❌ Failed to start prayer. Please check if I have voice permissions."
                 )
 
+        @self.tree.command(
+            name="setticketdrawchannel",
+            description="Set the text channel for the daily ticket draw",
+        )
+        @discord.app_commands.describe(
+            channel="Text channel where the daily draw is posted",
+        )
+        @discord.app_commands.default_permissions(manage_guild=True)
+        @discord.app_commands.guild_only()
+        async def setticketdrawchannel(
+            interaction: discord.Interaction,
+            channel: discord.TextChannel,
+        ) -> None:
+            from bot.daily_draw_commands import process_slash_setticketdrawchannel
+
+            reply = await process_slash_setticketdrawchannel(self.db, interaction, channel)
+            ephemeral = not reply.startswith("Daily draw channel set to")
+            await interaction.response.send_message(reply, ephemeral=ephemeral)
+
         @self.tree.command(name="exit", description="Stop the current prayer and leave the voice channel")
         @discord.app_commands.default_permissions(manage_guild=True)
         @discord.app_commands.guild_only()
@@ -215,7 +234,7 @@ class PrayerBotStatusMixin:
                 name="🛡️ Admin Commands (Manage Server required)",
                 value=(
                     "`/exit` - Stop playback and make the bot leave voice\n"
-                    "`@bot setticketdrawchannel <channel-id>` - Set the daily ticket-draw channel"
+                    "`/setticketdrawchannel` - Set the daily ticket-draw text channel (dropdown)"
                 ),
                 inline=False,
             )

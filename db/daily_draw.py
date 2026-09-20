@@ -23,7 +23,7 @@ from db.database import Database
 # PRAYER_DRAW_CHANNEL_ID is unset on first-ever guild init. Once a
 # daily_draw_config row exists, that row wins; changing env does not
 # override it. Operators move the channel at runtime with
-# `@bot setticketdrawchannel <channel-id>`.
+# /setticketdrawchannel or the dashboard Servers picker.
 DEFAULT_CHANNEL_ID = "0000000000000000000"
 DEFAULT_ROLE_ID = "1481586542911684648"
 DEFAULT_COOLDOWN_HOURS = 18
@@ -58,14 +58,21 @@ def _env_str(name: str, default: str) -> str:
     return raw if raw and raw.strip() else default
 
 
-def get_or_seed_config(db: Database, guild_id: str) -> DailyDrawConfig:
-    """Return this guild's draw config, seeding from env on first call only.
+def _config_from_row(row: object) -> DailyDrawConfig:
+    return DailyDrawConfig(
+        guild_id=row["guild_id"],  # type: ignore[index]
+        channel_id=row["channel_id"],  # type: ignore[index]
+        target_role_id=row["target_role_id"],  # type: ignore[index]
+        base_text=row["base_text"],  # type: ignore[index]
+        emoji_catpray=row["emoji_catpray"],  # type: ignore[index]
+        cooldown_hours=int(row["cooldown_hours"]),  # type: ignore[index]
+        post_hour=int(row["post_hour"]),  # type: ignore[index]
+        timezone_name=row["timezone_name"],  # type: ignore[index]
+    )
 
-    Precedence: an existing ``daily_draw_config`` row is the source of truth.
-    ``PRAYER_DRAW_CHANNEL_ID`` / ``DEFAULT_CHANNEL_ID`` (and the other
-    ``PRAYER_DRAW_*`` env vars) are seed-only for first-ever guild init.
-    Changing env after a row exists does not override it.
-    """
+
+def get_config(db: Database, guild_id: str) -> DailyDrawConfig | None:
+    """Return stored draw config, or None if this guild has never been seeded."""
     row = db.fetchone(
         """
         SELECT guild_id, channel_id, target_role_id, base_text, emoji_catpray,
@@ -75,17 +82,22 @@ def get_or_seed_config(db: Database, guild_id: str) -> DailyDrawConfig:
         """,
         (guild_id,),
     )
-    if row is not None:
-        return DailyDrawConfig(
-            guild_id=row["guild_id"],
-            channel_id=row["channel_id"],
-            target_role_id=row["target_role_id"],
-            base_text=row["base_text"],
-            emoji_catpray=row["emoji_catpray"],
-            cooldown_hours=int(row["cooldown_hours"]),
-            post_hour=int(row["post_hour"]),
-            timezone_name=row["timezone_name"],
-        )
+    if row is None:
+        return None
+    return _config_from_row(row)
+
+
+def get_or_seed_config(db: Database, guild_id: str) -> DailyDrawConfig:
+    """Return this guild's draw config, seeding from env on first call only.
+
+    Precedence: an existing ``daily_draw_config`` row is the source of truth.
+    ``PRAYER_DRAW_CHANNEL_ID`` / ``DEFAULT_CHANNEL_ID`` (and the other
+    ``PRAYER_DRAW_*`` env vars) are seed-only for first-ever guild init.
+    Changing env after a row exists does not override it.
+    """
+    existing = get_config(db, guild_id)
+    if existing is not None:
+        return existing
     cfg = DailyDrawConfig(
         guild_id=guild_id,
         channel_id=_env_str(DAILY_DRAW_CHANNEL_ENV, DEFAULT_CHANNEL_ID),

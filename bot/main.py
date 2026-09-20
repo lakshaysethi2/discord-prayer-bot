@@ -31,9 +31,10 @@ class PrayerBot(DailyDrawV2Mixin, PrayerBotRuntimeMixin, discord.Client):
         intents = discord.Intents.default()
         intents.voice_states = True
         intents.guilds = True
-        # Privileged: required so mention-prefix commands can read the text
-        # after @bot. Also enable it in the Discord Developer Portal.
-        intents.message_content = True
+        # Privileged: Server Members is required so the daily draw can read
+        # the key-role member list. Message Content is NOT required (channel
+        # setting is a slash command + dashboard). Enable Server Members in
+        # the Discord Developer Portal or login fails with PrivilegedIntentsRequired.
         intents.members = True
         super().__init__(intents=intents)
 
@@ -56,6 +57,7 @@ class PrayerBot(DailyDrawV2Mixin, PrayerBotRuntimeMixin, discord.Client):
         self._daily_draw_locks: dict[str, asyncio.Lock] = {}
         self._daily_draw_task: asyncio.Task | None = None
         self._daily_draw_failures: dict[str, tuple[str, int]] = {}
+        self._draw_button_gate: asyncio.Lock = asyncio.Lock()
 
     def _bump_daily_draw_failure(self, guild_id: str, today_local: str) -> None:
         date, attempts = self._daily_draw_failures.get(guild_id, (today_local, 0))
