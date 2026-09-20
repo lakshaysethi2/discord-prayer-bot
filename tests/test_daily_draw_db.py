@@ -70,7 +70,7 @@ def test_get_or_seed_config_seeds_owner_defaults(db, monkeypatch):
     cfg = get_or_seed_config(db, GID)
     assert isinstance(cfg, DailyDrawConfig)
     assert cfg.guild_id == GID
-    assert cfg.channel_id == DEFAULT_CHANNEL_ID == "1377047809513099345"
+    assert cfg.channel_id == DEFAULT_CHANNEL_ID == "0000000000000000000"
     assert cfg.target_role_id == DEFAULT_ROLE_ID == "1481586542911684648"
     assert cfg.cooldown_hours == DEFAULT_COOLDOWN_HOURS == 18
     assert cfg.post_hour == DEFAULT_POST_HOUR == 7

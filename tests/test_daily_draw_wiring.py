@@ -22,6 +22,8 @@ def test_v2_methods_are_on_prayer_bot(monkeypatch):
         "_send_daily_draw_cooldown_reply",
         "_edit_daily_draw_message",
         "on_interaction",
+        "on_message",
+        "_resolve_daily_draw_guild_ids",
     ):
         assert getattr(bot.main.PrayerBot, name).__qualname__.startswith(
             "DailyDrawV2Mixin"

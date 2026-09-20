@@ -30,6 +30,7 @@
 | **BotState** | `bot/state_framework.py` | Guild-scoped state storage. Ensures isolation between Discord servers. |
 | **PrayerScheduler** | `bot/prayer_scheduler.py` | 30s loop: checks prayer times, triggers pre-join 10 min before. Uses date-scoped markers to prevent double-play. |
 | **TTS Queue** | `bot/main.py` | Per-guild `asyncio.Queue` for greetings/blessings to prevent audio overlaps. |
+| **Draw mention cmd** | `bot/daily_draw_commands.py` | `@bot setticketdrawchannel <id>` parse/validate/persist (issue #49). |
 
 ## DB Layer (`db/models.py` is the Source of Truth)
 
@@ -46,6 +47,7 @@
 - **Notification Cleanup.** Bot deletes its previous "Now Playing" message when a prayer ends or a new one starts to reduce channel spam.
 - **Status Blips.** Bot temporarily joins voice every 30m just to set the "Voice Channel Status" (text next to channel name), then leaves.
 - **Slash Commands.** Preferred adhoc method. Requires `manage_guild` permission.
+- **Mention-prefix exception (issue #49).** `@bot setticketdrawchannel <channel-id>` is mention-prefix only — do not add `/setticketdrawchannel`. DB `daily_draw_config.channel_id` wins over env after first seed.
 
 ## 💣 Known Landmines
 

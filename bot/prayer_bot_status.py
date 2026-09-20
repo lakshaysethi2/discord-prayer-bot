@@ -213,7 +213,10 @@ class PrayerBotStatusMixin:
             )
             embed.add_field(
                 name="🛡️ Admin Commands (Manage Server required)",
-                value="`/exit` - Stop playback and make the bot leave voice",
+                value=(
+                    "`/exit` - Stop playback and make the bot leave voice\n"
+                    "`@bot setticketdrawchannel <channel-id>` - Set the daily ticket-draw channel"
+                ),
                 inline=False,
             )
             embed.add_field(
