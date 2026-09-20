@@ -18,10 +18,12 @@ describe('Server Management Page', () => {
     cy.get('form[action="/servers/update"]').should('have.length.at.least', 1);
   });
 
-  it('should have voice and logging channel dropdowns', () => {
+  it('should have voice, logging, and daily draw channel dropdowns', () => {
     cy.get('select[name="voice_channel_id"]').should('be.visible');
     cy.get('select[name="text_channel_id"]').should('be.visible');
     cy.get('select[name="logging_channel_id"]').should('be.visible');
+    cy.get('select[name="draw_channel_id"]').should('be.visible');
+    cy.contains('Daily draw channel').should('be.visible');
   });
 
   it('should have bot voice selection', () => {

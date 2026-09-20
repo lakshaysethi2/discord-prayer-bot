@@ -91,8 +91,8 @@ The bot provides constant feedback on the upcoming schedule through three differ
 
 ## 6. Daily Draw Feature Prerequisites (issue #16)
 
-1.  **Server Members Intent (privileged)**: the random draw target is picked from the configured key role's member list, so this intent must be enabled in the Discord developer portal **and** `intents.members = True` (set by the bot itself). Without it, member/role data is incomplete and draws fail gracefully.
-2.  **Message Content Intent (privileged)**: required so `@bot setticketdrawchannel <channel-id>` can read the text after the mention. Enable it in the Developer Portal; the bot sets `intents.message_content = True`.
-3.  **Channel permissions**: the bot needs **Send Messages** in the draw channel; editing its own message requires nothing extra (Manage Channels is NOT required).
-4.  **Key role id** defaults to `1481586542911684648` (env `PRAYER_DRAW_ROLE_ID`, stored in DB). If the role is ever deleted/recreated, update the id.
-5.  **Draw channel**: seed env `PRAYER_DRAW_CHANNEL_ID` is first-init only. After a guild row exists, change it with `@bot setticketdrawchannel <channel-id>` (Manage Server). Catpray emoji `1501495634887442533` must still belong to the guild.
+1.  **Server Members Intent (privileged)**: the random draw target is picked from the configured key role's member list, so this intent must be enabled in the Discord developer portal **and** `intents.members = True` (set by the bot itself). Without it, member/role data is incomplete and draws fail gracefully. Message Content intent is **not** required.
+2.  **Channel permissions**: the bot needs **Send Messages** in the draw channel; editing its own message requires nothing extra (Manage Channels is NOT required).
+3.  **Key role id** defaults to `1481586542911684648` (env `PRAYER_DRAW_ROLE_ID`, stored in DB). If the role is ever deleted/recreated, update the id.
+4.  **Draw channel**: seed env `PRAYER_DRAW_CHANNEL_ID` is first-init only. After a guild row exists, change it with `/setticketdrawchannel` (Manage Server, channel dropdown) or the dashboard Servers picker. Catpray emoji `1501495634887442533` must still belong to the guild.
+5.  **Draw button**: the "Draw your ticket" component is a persistent view (`timeout=None`, registered on startup) so clicks work all day and after restart.

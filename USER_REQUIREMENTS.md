@@ -24,6 +24,7 @@ A Discord bot that plays scheduled prayer audio (6 traditions: Buddhist, Christi
 - Web dashboard at `http://<host>:8700`
 - Cloudflare Tunnel: `https://prayer-bot-dnd.lak.nz`
 - Guild selector with server names (not raw IDs)
+- Per-server **Daily draw channel** dropdown (same `daily_draw_config.channel_id` as `/setticketdrawchannel`)
 - Weekly schedule editor with dual Save buttons (top/bottom)
 - Prayer History view showing the last 50 recitation events
 - Ad-hoc "Play Now" button for instant recitation
@@ -31,8 +32,8 @@ A Discord bot that plays scheduled prayer audio (6 traditions: Buddhist, Christi
 - Tailwind CSS dark theme
 
 ### FR-4: Discord Interaction (Slash Commands & TTS)
-- **Slash Commands**: `/start` (adhoc play) and `/exit` (stop/disconnect) - Admin only (`manage_guild`)
-- **Mention-prefix (exception)**: `@bot setticketdrawchannel <channel-id>` sets the daily ticket-draw text channel at runtime. Manage Server required. Intentionally not a slash command (`/setticketdrawchannel` must not exist). DMs are ignored. Invalid/missing/non-text/no-Send-Messages channel IDs are rejected without writing. DB row wins over `PRAYER_DRAW_CHANNEL_ID` after first seed.
+- **Slash Commands**: `/start` (adhoc play), `/exit` (stop/disconnect), `/setticketdrawchannel` (daily-draw text channel dropdown). `/exit` and `/setticketdrawchannel` are admin-only (`manage_guild`).
+- **Daily draw channel**: Admins set it via `/setticketdrawchannel` (Discord channel picker) or the dashboard Servers page ("Daily draw channel" dropdown). Manage Server required in Discord. Non-text / no-Send-Messages / other-guild channels are rejected without writing. DB row wins over `PRAYER_DRAW_CHANNEL_ID` after first seed. (Owner reversed the original issue #49 mention-prefix-only design in https://github.com/lakshaysethi2/discord-prayer-bot/issues/49#issuecomment-5746789417.)
 - **TTS Greetings**: Bot greets users joining voice 10 min before prayer: *"Welcome [Name], thank you for coming, we will start the prayer in X minutes."* (5-second delay for connection stability)
 - **TTS Blessings**: Bot thanks users by name after prayer finishes: *"Thank you [Name A] and [Name B] for joining, god bless you."*
 - **Sequential Queue**: Greetings play one after another without audio overlaps

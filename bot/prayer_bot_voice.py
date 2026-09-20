@@ -23,9 +23,14 @@ class PrayerBotVoiceMixin:
             self._setup_slash_commands()
             await self.tree.sync()
             log.info("Slash commands synced globally")
-            self._cleanup_task = asyncio.create_task(self._automatic_cache_cleanup())
         except Exception as exc:
             log.exception("Failed to sync slash commands in setup_hook: %s", exc)
+        try:
+            self.add_view(self._daily_draw_view())
+            log.info("Registered persistent daily-draw ticket view")
+        except Exception as exc:
+            log.exception("Failed to register daily-draw view: %s", exc)
+        self._cleanup_task = asyncio.create_task(self._automatic_cache_cleanup())
 
     async def on_guild_join(self, guild: discord.Guild) -> None:
         log.info("Joined new guild: %s (id=%s)", guild.name, guild.id)
