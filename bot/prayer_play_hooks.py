@@ -115,6 +115,7 @@ def install(bot_cls):  # type: ignore[no-untyped-def]
     _STATUS_ORIG = bot_cls._update_all_voice_statuses
     bot_cls._is_prayer_playing = _is_prayer_playing_impl
     bot_cls._on_pre_prayer = _on_pre_prayer
+    bot_cls._stop_greeting_tts = _stop_greeting_tts
     bot_cls._setup_guild = _setup_guild
     bot_cls._start_prayer_playback = _start_prayer_playback
     bot_cls._update_all_voice_statuses = _update_all_voice_statuses
