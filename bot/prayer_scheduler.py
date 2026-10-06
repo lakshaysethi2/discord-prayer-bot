@@ -48,6 +48,7 @@ class PrayerScheduler:
         self._watchdog_retries: dict[str, int] = {}
         self.is_voice_connected: Callable[[str], bool] | None = None
         self.is_prayer_playing: Callable[[str], bool] | None = None
+        self.session_expected_seconds: Callable[[str], int | None] | None = None
         self._task: asyncio.Task | None = None
         self._running = False
 
@@ -171,10 +172,18 @@ class PrayerScheduler:
     async def _watchdog_check(self) -> None:
         now_utc = datetime.now(timezone.utc)
         expired_keys = []
+        window_seconds = WATCHDOG_MAX_WINDOW_SECONDS
+        if self.session_expected_seconds is not None:
+            try:
+                custom = self.session_expected_seconds(self.guild_id)
+                if custom:
+                    window_seconds = int(custom)
+            except Exception:
+                pass
 
         for prayer_key, start_time in list(self._active_prayers.items()):
             elapsed = now_utc - _as_utc(start_time)
-            if elapsed.total_seconds() > WATCHDOG_MAX_WINDOW_SECONDS:
+            if elapsed.total_seconds() > window_seconds:
                 expired_keys.append(prayer_key)
                 continue
 

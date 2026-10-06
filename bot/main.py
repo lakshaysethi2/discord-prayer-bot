@@ -51,6 +51,10 @@ class PrayerBot(DailyDrawV2Mixin, PrayerBotRuntimeMixin, discord.Client):
         self._tts_playing: set[str] = set()
         self._tts_queues: dict[str, asyncio.Queue] = {}
         self._pending_joiners: dict[str, list[discord.Member]] = {}
+        self._session_steps: dict[str, tuple] = {}
+        self._session_tasks: dict[str, asyncio.Task] = {}
+        self._session_state: dict[str, dict] = {}
+        self._session_gen: dict[str, int] = {}
         self._status_task: asyncio.Task | None = None
         self._cleanup_task: asyncio.Task | None = None
         self._daily_draw_locks: dict[str, asyncio.Lock] = {}

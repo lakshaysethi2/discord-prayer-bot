@@ -88,8 +88,8 @@ def _open_present_humans(self, guild_id: str) -> None:
         open_session(self.db, guild_id, uid, name, nick)
 
 
-async def _start_prayer_playback(self, guild_id: str, prayer_type, filename: str, is_adhoc: bool = False) -> bool:
-    ok = await _START_ORIG(self, guild_id, prayer_type, filename, is_adhoc)
+async def _start_prayer_playback(self, guild_id: str, prayer_type, filename: str, is_adhoc: bool = False, **kwargs) -> bool:
+    ok = await _START_ORIG(self, guild_id, prayer_type, filename, is_adhoc, **kwargs)
     if ok:
         _open_present_humans(self, guild_id)
     return ok

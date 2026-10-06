@@ -14,6 +14,7 @@ A Discord bot that plays scheduled prayer audio (6 traditions: Buddhist, Christi
 
 ### FR-2: Audio Playback & Voice Behavior
 - Bot joins voice on-demand (10 min before prayer, leaves 5 min after finishing)
+- Every session except the 91st Psalm begins with the Three Daily Prayers recording (Our Father + the two Hawkins prayers), followed by a 15-second pause, then the tradition's recitation. `three_daily` is that file once; `psalm_91` never has an opener.
 - Uses FFmpeg to play MP3 audio
 - Supports pause/resume/skip/volume via dashboard controls
 - Auto-pause when last listener leaves voice channel; 5-min idle timeout disconnect
@@ -31,7 +32,7 @@ A Discord bot that plays scheduled prayer audio (6 traditions: Buddhist, Christi
 - Tailwind CSS dark theme
 
 ### FR-4: Discord Interaction (Slash Commands & TTS)
-- **Slash Commands**: `/start` (adhoc play) and `/exit` (stop/disconnect) - Admin only (`manage_guild`)
+- **Slash Commands**: `/start` (adhoc play, with optional `opener` boolean default True; ignored for `psalm_91`) and `/exit` (stop/disconnect) - Admin only (`manage_guild`)
 - **Mention-prefix (exception)**: `@bot setticketdrawchannel <channel-id>` sets the daily ticket-draw text channel at runtime. Manage Server required. Intentionally not a slash command (`/setticketdrawchannel` must not exist). DMs are ignored. Invalid/missing/non-text/no-Send-Messages channel IDs are rejected without writing. DB row wins over `PRAYER_DRAW_CHANNEL_ID` after first seed.
 - **TTS Greetings**: Bot greets users joining voice 10 min before prayer: *"Welcome [Name], thank you for coming, we will start the prayer in X minutes."* (5-second delay for connection stability)
 - **TTS Blessings**: Bot thanks users by name after prayer finishes: *"Thank you [Name A] and [Name B] for joining, god bless you."*

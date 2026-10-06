@@ -5,6 +5,7 @@ All notable changes to the Discord Prayer Bot.
 ## [Unreleased]
 
 ### Added
+- Prayer session opener (issue #53): every session except the 91st Psalm begins with `The three daily prayers - DND community.mp3` (Our Father + two Hawkins prayers), then a 15 s pause, then the tradition recitation. `/start` gains an `opener` option (default True); dashboard ad-hoc routes accept `opener`.
 - `@bot setticketdrawchannel <channel-id>` mention-prefix command (issue #49) sets the per-guild daily-draw text channel at runtime. Manage Server required; not a slash command.
 - Wiring tests pin v2 methods on `DailyDrawV2Mixin`, play-hook wrappers (including `_update_all_voice_statuses`), and the absence of `hook_prayer_bot`.
 - GitHub Actions workflow runs `pytest tests/ -q` on pull requests and `main`.

@@ -77,11 +77,22 @@ class PrayerBotCommandsMixin:
                 prayer_type = PrayerType(prayer_type_str)
             except ValueError:
                 prayer_type = PrayerType.THREE_DAILY
-            success = await self._start_prayer_playback(guild_id, prayer_type, track_id, is_adhoc=True)
+            with_opener = payload.get("with_opener", True)
+            if isinstance(with_opener, str):
+                with_opener = with_opener.lower() != "false"
+            else:
+                with_opener = bool(with_opener)
+            success = await self._start_prayer_playback(guild_id, prayer_type, track_id, is_adhoc=True, with_opener=with_opener)
             return "ok:playing" if success else "error:playback_failed"
         elif command == "disconnect":
             if not guild_id:
                 return "error:missing_guild_id"
+            cancel = getattr(self, "_cancel_session", None)
+            if callable(cancel):
+                try:
+                    cancel(guild_id)
+                except Exception:
+                    pass
             player = self.players.pop(guild_id, None)
             if player and player.is_playing():
                 await player.stop_hard()

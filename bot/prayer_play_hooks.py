@@ -12,6 +12,10 @@ log = logging.getLogger(__name__)
 
 
 def _is_prayer_playing_impl(self, guild_id: str) -> bool:
+    # A session is "playing" for its whole span, including the inter-section
+    # pause and the instant between tracks (watchdog/greeting/leaderboard safety).
+    if guild_id in getattr(self, "_session_steps", {}):
+        return guild_id not in getattr(self, "_tts_playing", set())
     player = self.players.get(guild_id)
     if player is None:
         return False
@@ -33,6 +37,16 @@ async def _stop_greeting_tts(self, guild_id: str) -> None:
     tts = getattr(self, "_tts_playing", None)
     if tts is not None:
         tts.discard(guild_id)
+    # Never stop a streaming prayer track: only stop the voice client when no
+    # session track is streaming (i.e. at a step boundary or when idle).
+    try:
+        checker = getattr(self, "_is_prayer_playing", None)
+        if callable(checker) and bool(checker(guild_id)):
+            player = getattr(self, "players", {}).get(guild_id)
+            if player is not None and bool(getattr(player, "is_playing", lambda: False)()):
+                return
+    except Exception:
+        pass
     vc = getattr(self, "voice_connections", {}).get(guild_id)
     if vc is not None and getattr(vc, "is_playing", lambda: False)():
         with_suppress = True
@@ -56,18 +70,19 @@ async def _on_pre_prayer(self, guild_id: str) -> bool:
     return True
 
 
-async def _setup_guild(self, guild_id: str):
+async def _setup_guild(self, guild_id: str):  # type: ignore[no-untyped-def]
     await _SETUP_ORIG(self, guild_id)
     scheduler = self.schedulers.get(guild_id)
     if scheduler is not None:
         scheduler.on_pre_prayer = self._on_pre_prayer
         scheduler.is_voice_connected = self._is_voice_connected
         scheduler.is_prayer_playing = self._is_prayer_playing
+        scheduler.session_expected_seconds = self._session_expected_seconds
 
 
-async def _start_prayer_playback(self, guild_id: str, prayer_type, filename: str, is_adhoc: bool = False) -> bool:
+async def _start_prayer_playback(self, guild_id: str, prayer_type, filename: str, is_adhoc: bool = False, **kwargs) -> bool:  # type: ignore[no-untyped-def]
     await _stop_greeting_tts(self, guild_id)
-    return await _START_ORIG(self, guild_id, prayer_type, filename, is_adhoc)
+    return await _START_ORIG(self, guild_id, prayer_type, filename, is_adhoc, **kwargs)
 
 
 async def _update_all_voice_statuses(self) -> None:
@@ -90,7 +105,7 @@ _START_ORIG = None
 _STATUS_ORIG = None
 
 
-def install(bot_cls):
+def install(bot_cls):  # type: ignore[no-untyped-def]
     """Wrap PrayerBot methods. Safe to call twice on the same class."""
     if getattr(bot_cls, "_play_hooks_installed", False):
         return bot_cls
@@ -100,6 +115,7 @@ def install(bot_cls):
     _STATUS_ORIG = bot_cls._update_all_voice_statuses
     bot_cls._is_prayer_playing = _is_prayer_playing_impl
     bot_cls._on_pre_prayer = _on_pre_prayer
+    bot_cls._stop_greeting_tts = _stop_greeting_tts
     bot_cls._setup_guild = _setup_guild
     bot_cls._start_prayer_playback = _start_prayer_playback
     bot_cls._update_all_voice_statuses = _update_all_voice_statuses
