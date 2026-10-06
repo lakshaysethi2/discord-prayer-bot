@@ -18,6 +18,7 @@ The bot follows a strict timeline for every scheduled prayer to ensure a respect
 
 ### 🛐 Phase 2: Recitation (T-0 minutes)
 *   **Exact Start**: At the exact scheduled minute, the bot begins playing the selected prayer audio (e.g., Buddhist, Christian, etc.).
+*   **Opening Prayers**: Every session except the 91st Psalm begins with the Three Daily Prayers recording (Our Father + the two Hawkins prayers), followed by a 15-second pause, then the tradition's recitation.
 *   **Silence Guard**: The bot will not perform any greetings while the prayer audio is playing to maintain the sanctity of the recitation.
 *   **Status Update**: The bot updates its "Voice Status" text next to the channel name to: *"Prayer in progress"*.
 
@@ -35,9 +36,9 @@ Admins can trigger prayers manually via the dashboard's "Play Now" button or the
 
 *   **Respectful Sequence**: Manual prayers do not start abruptly. They follow a specific sequence:
     1.  Bot joins and waits **5 seconds**.
-    2.  Bot announces: *"Reciting [Tradition] prayers."*
+    2.  Bot announces: *"Reciting [Tradition] prayers."* (or *"Reciting the Three Daily Prayers, followed by [Tradition] prayers."* when the opener plays).
     3.  Bot waits another **5 seconds** for everyone to prepare.
-    4.  Recitation begins.
+    4.  Recitation begins (opener first for every tradition except the 91st Psalm; `/start` accepts `opener:False` to skip it).
 *   **Exit Rule**: Manual prayers follow the same "Leave 5 minutes after" rule as scheduled prayers.
 *   **Emergency Stop**: The `/exit` command immediately stops any active prayer, clears the notification, and makes the bot leave the channel.
 

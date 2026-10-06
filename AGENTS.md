@@ -51,6 +51,9 @@
 
 ## 💣 Known Landmines
 
+- **Single `player.on_finish` slot**: arming it per-track terminates the session early. Arm one session-aware finish handler per session; run `_make_schedule_disconnect` once at session end.
+- **Watchdog window vs long sessions**: `WATCHDOG_MAX_WINDOW_SECONDS` (10 min) expires mid-session for two-track sessions (~17 min). Use the per-session `session_expected_seconds` window.
+- **Never call `_stop_greeting_tts` while a track is streaming**: `vc.stop()` kills prayer audio. Only drain TTS at step boundaries.
 - **`Player.is_playing()` vs `VoiceClient.is_playing()`**: The Player proxies the VoiceClient. While TTS is playing directly on the VoiceClient, the Player will report `is_playing() == True` even if the prayer is paused. Always check `guild_id in self._tts_playing`.
 - **Discord Status API**: You cannot set a "Voice Status" unless the bot is physically inside the channel. Do not remove the "join-set-leave" blip logic.
 - **TOCTOU in Greetings**: Greetings involve a network call to `edge-tts`. Re-check if a prayer has started *after* the `await save()` call to avoid cutting off prayers.

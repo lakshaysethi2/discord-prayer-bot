@@ -119,7 +119,10 @@ class PrayerBotStatusMixin:
 
     def _setup_slash_commands(self) -> None:
         @self.tree.command(name="start", description="Play a prayer adhoc")
-        @discord.app_commands.describe(prayer_type="The type of prayer to play")
+        @discord.app_commands.describe(
+            prayer_type="The type of prayer to play",
+            opener="Play the opening prayers (Our Father + two prayers) first. Ignored for The 91st Psalm.",
+        )
         @discord.app_commands.choices(prayer_type=[
             discord.app_commands.Choice(name="Buddhist", value="buddhist"),
             discord.app_commands.Choice(name="Christian", value="christian"),
@@ -130,12 +133,12 @@ class PrayerBotStatusMixin:
             discord.app_commands.Choice(name="Three Daily", value="three_daily"),
         ])
         @discord.app_commands.guild_only()
-        async def start_prayer(interaction: discord.Interaction, prayer_type: str):
+        async def start_prayer(interaction: discord.Interaction, prayer_type: str, opener: bool = True):
             guild_id = str(interaction.guild_id)
             pt = PrayerType(prayer_type)
             filename = get_audio_filename(pt)
             await interaction.response.defer(ephemeral=True)
-            success = await self._start_prayer_playback(guild_id, pt, filename, is_adhoc=True)
+            success = await self._start_prayer_playback(guild_id, pt, filename, is_adhoc=True, with_opener=opener)
             if success:
                 await interaction.followup.send(
                     f"🕌 Playing **{pt.value.title()}** prayer."

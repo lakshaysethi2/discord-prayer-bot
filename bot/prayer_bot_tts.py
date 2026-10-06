@@ -89,12 +89,21 @@ class PrayerBotTtsMixin:
             except Exception:
                 log.exception("TTS worker error in guild %s", guild_id)
 
+    def _is_prayer_active(self, guild_id: str) -> bool:
+        checker = getattr(self, "_is_prayer_playing", None)
+        if callable(checker):
+            try:
+                return bool(checker(guild_id))
+            except Exception:
+                pass
+        player = self.players.get(guild_id)
+        return bool(player and player.is_playing() and guild_id not in getattr(self, "_tts_playing", set()))
+
     async def _process_tts(self, guild_id: str, text: str) -> None:
         vc = self.voice_connections.get(guild_id)
         if not vc or not vc.is_connected():
             return
-        player = self.players.get(guild_id)
-        if player and player.is_playing() and not (guild_id in self._tts_playing):
+        if self._is_prayer_active(guild_id):
             return
         cfg = get_guild_config(self.db, guild_id)
         voice = cfg.tts_voice if cfg and cfg.tts_voice else "en-US-GuyNeural"
@@ -103,8 +112,7 @@ class PrayerBotTtsMixin:
         if not filepath.exists():
             communicate = edge_tts.Communicate(text, voice)
             await communicate.save(str(filepath))
-        player = self.players.get(guild_id)
-        if player and player.is_playing() and not (guild_id in self._tts_playing):
+        if self._is_prayer_active(guild_id):
             return
         source = self._source_factory(str(filepath), 0, 100)
         if vc.is_playing():

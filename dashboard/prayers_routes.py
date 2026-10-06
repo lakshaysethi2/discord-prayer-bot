@@ -302,6 +302,7 @@ async def adhoc_play(
     guild_id: str = Form(...),
     prayer_type: str = Form(...),
     filename: str = Form(...),
+    opener: str = Form("true"),
     db: Database = Depends(get_db),
 ):
     require_auth(request)
@@ -310,6 +311,7 @@ async def adhoc_play(
         "guild_id": guild_id,
         "track_id": filename,
         "prayer_type": prayer_type,
+        "with_opener": opener.lower() != "false",
     })
     return JSONResponse({"ok": True, "msg": f"Queued: {prayer_type} prayer will play in a few seconds"})
 
@@ -318,6 +320,7 @@ async def adhoc_play(
 async def adhoc_play_by_id(
     request: Request,
     schedule_id: int = Form(...),
+    opener: str = Form("true"),
     db: Database = Depends(get_db),
 ):
     require_auth(request)
@@ -331,6 +334,7 @@ async def adhoc_play_by_id(
         "guild_id": sched["guild_id"],
         "track_id": filename,
         "prayer_type": prayer_type.value,
+        "with_opener": opener.lower() != "false",
     })
     return JSONResponse({"ok": True, "msg": "Queued"})
 
