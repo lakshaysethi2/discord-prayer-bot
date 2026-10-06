@@ -4,7 +4,7 @@
 {% block content %}
 <h1 class="text-xl font-semibold mb-1">Server Management</h1>
 <p class="text-slate-400 text-sm mb-4">
-  Select voice/text channels and enable the bot for each server. Changes apply live — no restart needed.
+  Select voice/text channels, the daily ticket-draw channel, and enable the bot for each server. Changes apply live — no restart needed.
 </p>
 
 {% if flash %}
@@ -80,6 +80,19 @@
             <option value="">— none —</option>
             {% for tc in s.text_channels %}
               <option value="{{ tc.channel_id }}" {{ "selected" if s.logging_channel_id == tc.channel_id else "" }}>
+                {{ tc.channel_name }}
+              </option>
+            {% endfor %}
+          </select>
+        </label>
+
+        <label class="text-sm">
+          <span class="block text-slate-400 mb-1">Daily draw channel</span>
+          <select name="draw_channel_id"
+                  class="w-full rounded bg-slate-800 border border-slate-700 px-2 py-1.5 text-slate-100">
+            <option value="">— none —</option>
+            {% for tc in s.draw_text_channels %}
+              <option value="{{ tc.channel_id }}" {{ "selected" if s.draw_channel_id == tc.channel_id else "" }}>
                 {{ tc.channel_name }}
               </option>
             {% endfor %}
