@@ -69,21 +69,46 @@ FFmpegSourceFactory = Callable[
 ]  # (path, seek_seconds, volume_percent) -> AudioSource
 
 
+# Target loudness for all speech; prayer recordings are mixed far below TTS level.
+LOUDNESS_FILTER = "loudnorm=I=-16:TP=-1.5:LRA=11"
+# Sits after any gain above unity. Normalising already peaks at -1.5 dBFS, so a
+# boosted volume setting would clip immediately (10 % of samples at the 750 %
+# maximum); this keeps the ceiling at -1.0 dBFS instead.
+VOLUME_LIMITER = "alimiter=level=0:limit=0.891"
+
+
+def build_audio_options(seek_seconds: float, volume_percent: int) -> tuple[str, str]:
+    """Return (before_options, options) for FFmpeg.
+
+    Every source is loudness-normalised: the prayer recordings peak around
+    -25 dB, which is inaudible next to TTS, and keeping the chain in one place
+    stops the player and the TTS factory from drifting apart. The volume setting
+    is applied *after* the normaliser (before it, it would be normalised away)
+    and is bounded by a limiter whenever it applies gain, because normalisation
+    leaves almost no headroom.
+    """
+    before = ""
+    if seek_seconds > 0:
+        # -ss before -i is fast (keyframe) seek; good enough for audio.
+        before = f"-ss {seek_seconds:.3f}"
+    filters = [LOUDNESS_FILTER]
+    if volume_percent != 100:
+        filters.append(f"volume={volume_percent / 100:.2f}")
+        if volume_percent > 100:
+            filters.append(VOLUME_LIMITER)
+    # -vn drops any video stream just in case the source has one.
+    # -loglevel warning keeps the ffmpeg subprocess quiet.
+    options = f"-vn -af {','.join(filters)} -loglevel warning"
+    return before, options
+
+
 def default_ffmpeg_source(
     path: str, seek_seconds: float, volume_percent: int
 ):  # pragma: no cover — requires ffmpeg
     """Build a discord.FFmpegPCMAudio for `path`, seeking to `seek_seconds`."""
     import discord  # local import — discord.py is heavy and optional in tests
 
-    before = ""
-    if seek_seconds > 0:
-        # -ss before -i is fast (keyframe) seek; good enough for audio.
-        before = f"-ss {seek_seconds:.3f}"
-    # -vn drops any video stream just in case the source has one.
-    # -loglevel warning keeps the ffmpeg subprocess quiet.
-    options = "-vn -loglevel warning"
-    if volume_percent != 100:
-        options = f"-vn -af volume={volume_percent / 100:.2f} -loglevel warning"
+    before, options = build_audio_options(seek_seconds, volume_percent)
     return discord.FFmpegPCMAudio(path, before_options=before, options=options)
 
 

@@ -10,6 +10,7 @@ import discord
 
 from bot.prayer_scheduler import PrayerScheduler
 from bot.state_framework import GuildScopedState
+from bot.voice_e2ee import ensure_voice_encryption_ready
 from db import guilds as guilds_db
 from db.prayers import get_guild_config
 
@@ -133,11 +134,13 @@ class PrayerBotVoiceMixin:
                     await guild.voice_client.disconnect(force=True)
         if existing and existing.is_connected():
             if existing.channel and str(existing.channel.id) == str(cfg.voice_channel_id):
+                await ensure_voice_encryption_ready(existing)
                 if not is_blip:
                     scoped_state = GuildScopedState(self.db, guild_id)
                     scoped_state.is_connected = True
                 return existing
             await existing.move_to(voice_channel)
+            await ensure_voice_encryption_ready(existing)
             if not is_blip:
                 scoped_state = GuildScopedState(self.db, guild_id)
                 scoped_state.is_connected = True
@@ -158,6 +161,7 @@ class PrayerBotVoiceMixin:
             else:
                 return None
             self.voice_connections[guild_id] = vc
+            await ensure_voice_encryption_ready(vc)
             log.info("Joined voice in guild %s for prayer", guild_id)
             if not is_blip:
                 scoped_state = GuildScopedState(self.db, guild_id)

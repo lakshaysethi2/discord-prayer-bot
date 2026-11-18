@@ -45,6 +45,9 @@ All notable changes to the Discord Prayer Bot.
 - **Scheduler Precision**: 30-second check loop with date-scoped pre-join markers to prevent double-play on restarts.
 
 ### Fixed
+- **Silent voice under Discord's E2EE (DAVE) requirement**: Discord now refuses voice connections that don't support DAVE (close code 4017), and discord.py 2.7.1 leaves the MLS session `active` but never ready — it drops the return value of `DaveSession.process_commit` and never finishes transition 0. `can_encrypt` therefore stayed `False`, every outgoing frame was sent unencrypted, and listeners' clients discarded them: the bot joined, logged `playing`, sent ~50 packets/s, and nobody heard anything. `bot/voice_e2ee.py` now completes the transition after each connect, and `discord.py[voice]` is pinned to `>=2.7.1,<2.8` because older versions are refused by the voice gateway.
+- Inaudible prayers: all prayer MP3s peak around -25 dB, so they were silent next to normal-level TTS. FFmpeg now loudness-normalises every source to -16 LUFS with a -1.5 dB true peak before applying the volume setting, and a limiter keeps boosted volume settings from clipping the normalised signal.
+- Cached TTS files that fail to decode are discarded and regenerated; new TTS audio is written to a unique temp file and only cached after FFmpeg can read it. A missing or wedged FFmpeg no longer deletes a cache file it cannot judge.
 - Stale-draw button reply no longer ends with a dangling colon when no active message exists; it now says a new draw will be posted shortly.
 - `repost_slot` is UPDATE-only, so `active_cycle_date` can never be written NULL by a mid-cycle repost.
 - Fixed `403 Forbidden` error when setting voice status while disconnected (now uses join-set-leave blip).

@@ -5,16 +5,52 @@ import asyncio
 import contextlib
 import hashlib
 import logging
+import os
+import subprocess
+import uuid
 from pathlib import Path
 
 import discord
 import edge_tts
 
+from bot.player_framework import build_audio_options
 from bot.state_framework import GuildScopedState
 from db.prayers import get_guild_config
 
 log = logging.getLogger(__name__)
 TTS_DIR = Path("data/tts")
+# edge-tts writes 24 kHz mono MP3 at ~6 kB/s, so anything under this is a stub.
+# Kept low on purpose: a short real phrase must never be thrown away.
+MIN_TTS_BYTES = 2048
+
+
+def _tts_cache_valid(path: Path) -> bool:
+    """True when FFmpeg can open `path` and read audio out of it.
+
+    Files written by a killed process or a full disk can have a plausible size
+    but no decodable audio; FFmpeg exits non-zero on those, and they never play.
+    This is a cheap prefix check, not a checksum: truncation further into the
+    file is not detectable without a full decode, so new audio is validated in
+    `.part` form before it is renamed into the cache instead.
+    """
+    try:
+        if path.stat().st_size < MIN_TTS_BYTES:
+            return False
+    except OSError:
+        return False
+    try:
+        probe = subprocess.run(
+            ["ffmpeg", "-v", "error", "-i", str(path), "-t", "0.2", "-f", "null", "-"],
+            capture_output=True,
+            timeout=15,
+        )
+    except (OSError, subprocess.SubprocessError):
+        # FFmpeg itself is missing or wedged. We cannot judge the file, so keep
+        # it: deleting a good cache entry here would mute every announcement and
+        # re-synthesise it on each message.
+        return True
+    # `-v error` still prints decode errors for files that "open" but are broken.
+    return probe.returncode == 0 and not probe.stderr.strip()
 
 
 class PrayerBotTtsMixin:
@@ -109,9 +145,24 @@ class PrayerBotTtsMixin:
         voice = cfg.tts_voice if cfg and cfg.tts_voice else "en-US-GuyNeural"
         cache_key = hashlib.sha1(f"{voice}:{text}".encode()).hexdigest()
         filepath = TTS_DIR / f"tts_{cache_key}.mp3"
-        if not filepath.exists():
-            communicate = edge_tts.Communicate(text, voice)
-            await communicate.save(str(filepath))
+        if not filepath.exists() or not await asyncio.to_thread(_tts_cache_valid, filepath):
+            if filepath.exists():
+                log.warning("Discarding unreadable TTS cache file %s", filepath)
+                filepath.unlink(missing_ok=True)
+            TTS_DIR.mkdir(parents=True, exist_ok=True)
+            # Unique per writer: two guilds can synthesise the same text at the
+            # same moment and would otherwise overwrite each other's `.part`.
+            tag = f"{os.getpid()}-{uuid.uuid4().hex[:8]}"
+            tmp_path = filepath.with_name(f"{filepath.name}.{tag}.part")
+            try:
+                communicate = edge_tts.Communicate(text, voice)
+                await communicate.save(str(tmp_path))
+                if not await asyncio.to_thread(_tts_cache_valid, tmp_path):
+                    log.error("TTS generation produced unreadable audio for guild %s", guild_id)
+                    return
+                os.replace(tmp_path, filepath)
+            finally:
+                tmp_path.unlink(missing_ok=True)
         if self._is_prayer_active(guild_id):
             return
         source = self._source_factory(str(filepath), 0, 100)
@@ -159,12 +210,7 @@ class PrayerBotTtsMixin:
             asyncio.create_task(self._update_all_voice_statuses())
 
     def _source_factory(self, path: str, seek_seconds: float, volume_percent: int):
-        before = ""
-        if seek_seconds > 0:
-            before = f"-ss {seek_seconds:.3f}"
-        options = "-vn -loglevel warning"
-        if volume_percent != 100:
-            options = f"-vn -af volume={volume_percent / 100:.2f} -loglevel warning"
+        before, options = build_audio_options(seek_seconds, volume_percent)
         return discord.FFmpegPCMAudio(path, before_options=before, options=options)
 
     def _get_listening_channel(self, guild_id: str):
