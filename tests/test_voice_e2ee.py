@@ -123,3 +123,128 @@ def test_prepare_failure_is_swallowed(monkeypatch: pytest.MonkeyPatch) -> None:
     conn = FakeConn(session)
 
     assert _ready(conn, **dict(FAST, timeout=0.15)) is False
+
+
+def test_stuck_session_is_escalated_to_a_fresh_connection() -> None:
+    """A pending session (issue #73) must trigger a reconnect, not just a timeout."""
+    stuck = FakeConn(FakeSession(status="pending"))
+    healthy_session = FakeSession(flip_on_prepare=True)
+    healthy = FakeConn(healthy_session)
+
+    calls: list[int] = []
+
+    async def reconnect():
+        calls.append(1)
+        return SimpleNamespace(_connection=healthy)
+
+    vc = SimpleNamespace(_connection=stuck)
+    ok = asyncio.run(
+        ensure_voice_encryption_ready(vc, reconnect=reconnect, **FAST)
+    )
+
+    assert ok is True
+    assert len(calls) == 1
+    assert healthy.can_encrypt is True
+
+
+def test_reconnect_is_bounded_by_attempts() -> None:
+    stuck = FakeConn(FakeSession(status="pending"))
+    calls: list[int] = []
+
+    async def reconnect():
+        calls.append(1)
+        return SimpleNamespace(_connection=stuck)
+
+    vc = SimpleNamespace(_connection=stuck)
+    ok = asyncio.run(
+        ensure_voice_encryption_ready(vc, reconnect=reconnect, attempts=2, **FAST)
+    )
+
+    assert ok is False
+    assert len(calls) == 1
+
+
+def test_reconnect_failure_is_not_raised() -> None:
+    stuck = FakeConn(FakeSession(status="pending"))
+
+    async def reconnect():
+        raise RuntimeError("gateway is down")
+
+    vc = SimpleNamespace(_connection=stuck)
+    assert asyncio.run(ensure_voice_encryption_ready(vc, reconnect=reconnect, **FAST)) is False
+
+
+def test_watchdog_restarts_the_prayer_when_encryption_is_lost(monkeypatch) -> None:
+    """A dead E2EE session mid-play must restart playback once, not stay silent."""
+    from bot.prayer_bot_playback import PrayerBotPlaybackMixin
+
+    restarted: list[tuple] = []
+
+    class FakePlayer:
+        def is_playing(self):
+            return True
+
+    class FakeWatchVC:
+        def is_connected(self):
+            return True
+
+        _connection = SimpleNamespace(can_encrypt=False,
+                                      dave_session=SimpleNamespace(status="pending"))
+
+    class Stub(PrayerBotPlaybackMixin):
+        players = {"g": FakePlayer()}
+        voice_connections = {"g": FakeWatchVC()}
+        _session_gen = {"g": 1}
+        _session_args = {"g": ("psalm_91", "The 91st Psalm.mp3")}
+        _e2ee_watch_tasks: dict = {}
+
+        async def _start_prayer_playback(self, *args, **kwargs):
+            restarted.append((args, kwargs))
+            return True
+
+    Stub.E2EE_WATCH_INTERVAL = 0.01
+    asyncio.run(Stub()._e2ee_watchdog("g", 1))
+
+    assert len(restarted) == 1
+    assert restarted[0][0][0] == "g"
+
+
+def test_watchdog_finishes_transition_instead_of_restarting() -> None:
+    """When listeners join mid-prayer the session turns active but not ready.
+
+    That must be fixed in place — restarting the prayer is the last resort.
+    """
+    from bot.prayer_bot_playback import PrayerBotPlaybackMixin
+
+    restarted: list[tuple] = []
+    session = FakeSession(flip_on_prepare=True)
+    conn = FakeConn(session)
+
+    class FakePlayer:
+        def is_playing(self):
+            return True
+
+    class FakeWatchVC:
+        def is_connected(self):
+            return True
+
+        _connection = conn
+
+    class Stub(PrayerBotPlaybackMixin):
+        players = {"g": FakePlayer()}
+        voice_connections = {"g": FakeWatchVC()}
+        _session_gen = {"g": 1}
+        _session_args = {"g": ("psalm_91", "The 91st Psalm.mp3")}
+        _e2ee_watch_tasks: dict = {}
+
+        async def _start_prayer_playback(self, *args, **kwargs):
+            restarted.append((args, kwargs))
+            return True
+
+    Stub.E2EE_WATCH_INTERVAL = 0.01
+    with pytest.raises(asyncio.TimeoutError):
+        asyncio.run(asyncio.wait_for(Stub()._e2ee_watchdog("g", 1), timeout=0.2))
+
+    assert restarted == []
+    assert conn.can_encrypt is True
+    assert [call for call in session.calls if call[0] == "prepare"]

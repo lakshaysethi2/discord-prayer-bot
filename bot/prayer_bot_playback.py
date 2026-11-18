@@ -20,6 +20,7 @@ from bot.prayer_session import (
     session_plan,
 )
 from bot.state_framework import GuildScopedState
+from bot.voice_e2ee import complete_dave_transition, is_dave_session_active
 from db.models import PrayerType
 from db.prayers import get_guild_config, get_weekly_schedule, log_voice_join, log_voice_leave
 
@@ -52,6 +53,7 @@ class PrayerBotPlaybackMixin:
         if task is not None and not task.done():
             task.cancel()
             log.info("Cancelled previous prayer session in guild %s", guild_id)
+        self._cancel_e2ee_watchdog(guild_id)
         gen = getattr(self, "_session_gen", {}).get(guild_id, 0) + 1
         if not hasattr(self, "_session_gen"):
             self._session_gen = {}
@@ -195,10 +197,84 @@ class PrayerBotPlaybackMixin:
             return
         getattr(self, "_session_tasks", {}).pop(guild_id, None)
         getattr(self, "_session_state", {}).pop(guild_id, None)
+        self._cancel_e2ee_watchdog(guild_id)
         if player is None:
             player = self.players.get(guild_id)
         cb = self._make_schedule_disconnect(guild_id)
         await cb(player, track)
+
+    E2EE_WATCH_INTERVAL = 10.0
+    E2EE_MAX_REPAIRS = 2
+
+    async def _e2ee_watchdog(self, guild_id: str, gen: int) -> None:
+        """Restart the prayer if the voice encryption session dies mid-play.
+
+        Discord drops the E2EE session on a websocket reconnect (close code
+        1006) and discord.py keeps playing into it: no errors, no audio.
+        """
+        repairs = 0
+        try:
+            while True:
+                await asyncio.sleep(self.E2EE_WATCH_INTERVAL)
+                if gen != getattr(self, "_session_gen", {}).get(guild_id):
+                    return
+                player = self.players.get(guild_id)
+                vc = self.voice_connections.get(guild_id)
+                if player is None or vc is None or not vc.is_connected():
+                    return
+                if not player.is_playing():
+                    continue
+                conn = getattr(vc, "_connection", None)
+                session = getattr(conn, "dave_session", None) if conn else None
+                if session is None or getattr(conn, "can_encrypt", False):
+                    continue
+                # Listeners joining turns the MLS group active; discord.py never
+                # finishes that transition, so finish it before restarting.
+                if is_dave_session_active(session):
+                    complete_dave_transition(conn, session)
+                    if getattr(conn, "can_encrypt", False):
+                        log.info(
+                            "Voice E2EE recovered in guild %s without interrupting playback",
+                            guild_id,
+                        )
+                    continue
+                if repairs >= self.E2EE_MAX_REPAIRS:
+                    log.error(
+                        "Voice E2EE keeps failing in guild %s; giving up on repair",
+                        guild_id,
+                    )
+                    return
+                repairs += 1
+                args = getattr(self, "_session_args", {}).get(guild_id)
+                log.warning(
+                    "Voice E2EE lost in guild %s while playing (status=%s) — reconnecting "
+                    "and restarting the prayer",
+                    guild_id,
+                    getattr(session, "status", None),
+                )
+                getattr(self, "_e2ee_watch_tasks", {}).pop(guild_id, None)
+                if args is None:
+                    return
+                prayer_type, filename = args
+                await self._start_prayer_playback(
+                    guild_id, prayer_type, filename, is_adhoc=True, with_opener=False
+                )
+                return
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception("Voice E2EE watchdog failed in guild %s", guild_id)
+
+    def _start_e2ee_watchdog(self, guild_id: str, gen: int) -> None:
+        self._cancel_e2ee_watchdog(guild_id)
+        if not hasattr(self, "_e2ee_watch_tasks"):
+            self._e2ee_watch_tasks = {}
+        self._e2ee_watch_tasks[guild_id] = asyncio.create_task(self._e2ee_watchdog(guild_id, gen))
+
+    def _cancel_e2ee_watchdog(self, guild_id: str) -> None:
+        task = getattr(self, "_e2ee_watch_tasks", {}).pop(guild_id, None)
+        if task is not None and not task.done():
+            task.cancel()
 
     async def _start_prayer_playback(self, guild_id: str, prayer_type: PrayerType, filename: str, is_adhoc: bool = False, *, with_opener: bool = True) -> bool:
         plan = session_plan(prayer_type, with_opener=with_opener)
@@ -281,6 +357,10 @@ class PrayerBotPlaybackMixin:
             return False
         if len(plan) > 1:
             self._session_tasks[guild_id] = asyncio.create_task(self._run_session_remaining(guild_id, plan, gen))
+        if not hasattr(self, "_session_args"):
+            self._session_args = {}
+        self._session_args[guild_id] = (prayer_type, filename)
+        self._start_e2ee_watchdog(guild_id, gen)
         log.info("Playing %s in guild %s (will disconnect after stay duration)", prayer_type.value, guild_id)
         await self._log_to_channel(guild_id, f"Started playing **{prayer_type.value.title()}** prayer.")
         return True

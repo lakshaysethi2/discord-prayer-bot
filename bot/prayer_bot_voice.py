@@ -110,6 +110,28 @@ class PrayerBotVoiceMixin:
         await scheduler.start()
         log.info("Guild %s set up (voice on-demand): voice=%s, text=%s", guild_id, cfg.voice_channel_id, cfg.text_channel_id)
 
+    async def _reconnect_voice(self, guild_id: str) -> discord.VoiceClient | None:
+        """Drop the current voice session and join again.
+
+        A fresh voice connection always completes the DAVE handshake, so this
+        is the escalation path when a session never becomes usable.
+        """
+        cfg = get_guild_config(self.db, guild_id)
+        guild = self.get_guild(int(guild_id)) if cfg else None
+        if not cfg or guild is None or not cfg.voice_channel_id:
+            return None
+        voice_channel = guild.get_channel(int(cfg.voice_channel_id))
+        if voice_channel is None:
+            return None
+        current = self.voice_connections.pop(guild_id, None) or guild.voice_client
+        if current is not None:
+            with contextlib.suppress(Exception):
+                await current.disconnect(force=True)
+        vc = await voice_channel.connect(reconnect=True, timeout=30.0)
+        self.voice_connections[guild_id] = vc
+        log.info("Rejoined voice in guild %s", guild_id)
+        return vc
+
     async def _ensure_voice_connected(self, guild_id: str, is_blip: bool = False) -> discord.VoiceClient | None:
         cfg = get_guild_config(self.db, guild_id)
         if cfg is None or not cfg.voice_channel_id:
@@ -132,15 +154,25 @@ class PrayerBotVoiceMixin:
             else:
                 with contextlib.suppress(Exception):
                     await guild.voice_client.disconnect(force=True)
+        # A reconnect only helps when somebody is listening: Discord does not
+        # create an MLS group while the bot is alone in the channel.
+        has_listeners = any(not m.bot for m in voice_channel.members)
+
+        async def _reconnect():
+            return await self._reconnect_voice(guild_id)
+
+        reconnect = _reconnect if has_listeners else None
         if existing and existing.is_connected():
             if existing.channel and str(existing.channel.id) == str(cfg.voice_channel_id):
-                await ensure_voice_encryption_ready(existing)
+                await ensure_voice_encryption_ready(existing, reconnect=reconnect)
+                existing = self.voice_connections.get(guild_id) or existing
                 if not is_blip:
                     scoped_state = GuildScopedState(self.db, guild_id)
                     scoped_state.is_connected = True
                 return existing
             await existing.move_to(voice_channel)
-            await ensure_voice_encryption_ready(existing)
+            await ensure_voice_encryption_ready(existing, reconnect=reconnect)
+            existing = self.voice_connections.get(guild_id) or existing
             if not is_blip:
                 scoped_state = GuildScopedState(self.db, guild_id)
                 scoped_state.is_connected = True
@@ -161,7 +193,8 @@ class PrayerBotVoiceMixin:
             else:
                 return None
             self.voice_connections[guild_id] = vc
-            await ensure_voice_encryption_ready(vc)
+            await ensure_voice_encryption_ready(vc, reconnect=reconnect)
+            vc = self.voice_connections.get(guild_id) or vc
             log.info("Joined voice in guild %s for prayer", guild_id)
             if not is_blip:
                 scoped_state = GuildScopedState(self.db, guild_id)
