@@ -1,8 +1,3 @@
-"""Daily Draw v2 Discord runtime (issue #18).
-
-DailyDrawV2Mixin — explicit base of PrayerBot (issue #26).
-Invariants: docs/daily_draw_invariants.md — do not simplify them away.
-"""
 
 from __future__ import annotations
 
@@ -52,14 +47,7 @@ from db.daily_draw import (
 log = logging.getLogger(__name__)
 _DAILY_DRAW_MAX_RETRIES = 5
 
-
 class DailyDrawTicketView(discord.ui.View):
-    """Persistent "Draw your ticket" button (timeout=None, static custom_id).
-
-    Registered once via ``Client.add_view`` so clicks survive process restart.
-    The click is forwarded to the mixin handler; ``on_interaction`` is the
-    same path with an ``is_done()`` guard so the two cannot double-handle.
-    """
 
     def __init__(self, on_click: Any | None = None) -> None:
         super().__init__(timeout=None)
@@ -77,24 +65,9 @@ class DailyDrawTicketView(discord.ui.View):
             return
         await self._on_click(interaction)
 
-
 class DailyDrawV2Mixin:
-    """Daily Draw v2 wiring.
-
-    Invariants (log-first, in-lock cooldown re-check, defer-then-followup,
-    UPDATE-only repost) are documented in docs/daily_draw_invariants.md —
-    do not 'simplify' them away. This is the repo's only on_interaction handler.
-    """
 
     async def _resolve_daily_draw_guild_ids(self) -> list[str]:
-        """Guilds whose stored draw config should be ticked this pass.
-
-        DB row wins once seeded. ``PRAYER_DRAW_CHANNEL_ID`` and
-        ``DEFAULT_CHANNEL_ID`` are seed-only for first-ever guild init;
-        changing env after a guild row exists does not override the row.
-        After ``set_channel_id``, the next tick reads ``cfg.channel_id``
-        from SQLite via :func:`get_or_seed_config` — no in-memory cache.
-        """
         ids: list[str] = []
         seen: set[str] = set()
         for cfg in list_configured_guilds(self.db):
@@ -114,12 +87,10 @@ class DailyDrawV2Mixin:
         return [seeded] if seeded else []
 
     async def _resolve_daily_draw_guild(self) -> str | None:
-        """First configured guild, or None. Prefer :meth:`_resolve_daily_draw_guild_ids`."""
         ids = await self._resolve_daily_draw_guild_ids()
         return ids[0] if ids else None
 
     async def _seed_daily_draw_guild_from_env_channel(self) -> str | None:
-        """First-init only: locate the seed env channel on a joined guild and seed."""
         raw = os.environ.get(DAILY_DRAW_CHANNEL_ENV, DEFAULT_CHANNEL_ID)
         try:
             channel_id = int(raw)
@@ -142,12 +113,6 @@ class DailyDrawV2Mixin:
         return None
 
     async def on_interaction(self, interaction: discord.Interaction) -> None:
-        """First component handler: daily-draw ticket button.
-
-        Filters on the static custom_id ``daily_draw:ticket``; other
-        interactions pass through untouched. Defer ephemeral FIRST; all
-        replies are followups (spec §8).
-        """
         if interaction.type is not discord.InteractionType.component:
             return
         data = interaction.data or {}
@@ -157,10 +122,6 @@ class DailyDrawV2Mixin:
         await self._respond_daily_draw_button(interaction)
 
     async def _respond_daily_draw_button(self, interaction: discord.Interaction) -> None:
-        """Defer-then-handle, shared by the persistent view and on_interaction.
-
-        If the view callback already responded, skip so we never double-draw.
-        """
         gate: asyncio.Lock | None = getattr(self, "_draw_button_gate", None)
         if gate is None:
             gate = asyncio.Lock()
@@ -195,7 +156,6 @@ class DailyDrawV2Mixin:
                 log.exception("Daily draw error reply also failed")
 
     async def _daily_draw_loop(self) -> None:
-        """60s cadence with bounded retries per cycle (spec §7/§9)."""
         await self.wait_until_ready()
         missing_logged = False
         while not self.is_closed():
@@ -209,8 +169,13 @@ class DailyDrawV2Mixin:
                         missing_logged = True
                 else:
                     missing_logged = False
-                    for guild_id in guild_ids:
-                        await self._daily_draw_tick(guild_id)
+                    results = await asyncio.gather(
+                        *(self._daily_draw_tick(gid) for gid in guild_ids),
+                        return_exceptions=True,
+                    )
+                    for gid, res in zip(guild_ids, results):
+                        if isinstance(res, Exception):
+                            log.error("Daily draw tick failed for guild %s: %s", gid, res)
             except Exception:
                 log.exception("Error in daily draw loop")
             await asyncio.sleep(60)
@@ -314,11 +279,6 @@ class DailyDrawV2Mixin:
             log.warning("Daily draw: could not delete predecessor %s (%s)", message_id, exc)
 
     async def _handle_daily_draw_button(self, interaction: discord.Interaction) -> None:
-        """Log-first critical section (spec §8/§9).
-
-        A failed log write aborts the draw — no cooldown, no heart, no winner
-        reply. Cooldown is re-checked inside the lock (double-click race).
-        """
         from db import daily_draw as daily_draw_db
 
         guild = interaction.guild
@@ -409,7 +369,6 @@ class DailyDrawV2Mixin:
         )
 
     async def _send_daily_draw_cooldown_reply(self, interaction, cfg, last_draw=None, now_utc=None):
-        """catpray custom emoji first; on send failure degrade to folded-hands."""
         if now_utc is None:
             now_utc = datetime.now(pytz.utc)
         remaining = cooldown_remaining(last_draw, now_utc, cfg.cooldown_hours)
@@ -424,10 +383,6 @@ class DailyDrawV2Mixin:
                 )
 
     async def _edit_daily_draw_message(self, guild, cfg, message_id, cycle_date, heart_count):
-        """Self-heal: repost keeps current hearts via repoint_active_message.
-
-        Never call start_new_day here — that resets hearts.
-        """
         from db import daily_draw as daily_draw_db
 
         channel = guild.get_channel(int(cfg.channel_id))

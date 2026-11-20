@@ -1,4 +1,3 @@
-"""Voice connect and guild discovery for PrayerBot."""
 from __future__ import annotations
 
 import asyncio
@@ -16,7 +15,6 @@ from db.prayers import get_guild_config
 
 log = logging.getLogger(__name__)
 TTS_DIR = Path("data/tts")
-
 
 class PrayerBotVoiceMixin:
     async def setup_hook(self) -> None:
@@ -111,11 +109,6 @@ class PrayerBotVoiceMixin:
         log.info("Guild %s set up (voice on-demand): voice=%s, text=%s", guild_id, cfg.voice_channel_id, cfg.text_channel_id)
 
     async def _reconnect_voice(self, guild_id: str) -> discord.VoiceClient | None:
-        """Drop the current voice session and join again.
-
-        A fresh voice connection always completes the DAVE handshake, so this
-        is the escalation path when a session never becomes usable.
-        """
         cfg = get_guild_config(self.db, guild_id)
         guild = self.get_guild(int(guild_id)) if cfg else None
         if not cfg or guild is None or not cfg.voice_channel_id:
@@ -154,25 +147,30 @@ class PrayerBotVoiceMixin:
             else:
                 with contextlib.suppress(Exception):
                     await guild.voice_client.disconnect(force=True)
-        # A reconnect only helps when somebody is listening: Discord does not
-        # create an MLS group while the bot is alone in the channel.
         has_listeners = any(not m.bot for m in voice_channel.members)
 
         async def _reconnect():
             return await self._reconnect_voice(guild_id)
 
         reconnect = _reconnect if has_listeners else None
+
+        async def _wait_for_keys(client):
+            # An empty room has no group to key yet; waiting only burns the timeout.
+            if has_listeners:
+                await ensure_voice_encryption_ready(client, reconnect=reconnect)
+            else:
+                log.debug("Guild %s: channel is empty — deferring the E2EE wait", guild_id)
+            return self.voice_connections.get(guild_id) or client
+
         if existing and existing.is_connected():
             if existing.channel and str(existing.channel.id) == str(cfg.voice_channel_id):
-                await ensure_voice_encryption_ready(existing, reconnect=reconnect)
-                existing = self.voice_connections.get(guild_id) or existing
+                existing = await _wait_for_keys(existing)
                 if not is_blip:
                     scoped_state = GuildScopedState(self.db, guild_id)
                     scoped_state.is_connected = True
                 return existing
             await existing.move_to(voice_channel)
-            await ensure_voice_encryption_ready(existing, reconnect=reconnect)
-            existing = self.voice_connections.get(guild_id) or existing
+            existing = await _wait_for_keys(existing)
             if not is_blip:
                 scoped_state = GuildScopedState(self.db, guild_id)
                 scoped_state.is_connected = True
@@ -193,8 +191,7 @@ class PrayerBotVoiceMixin:
             else:
                 return None
             self.voice_connections[guild_id] = vc
-            await ensure_voice_encryption_ready(vc, reconnect=reconnect)
-            vc = self.voice_connections.get(guild_id) or vc
+            vc = await _wait_for_keys(vc)
             log.info("Joined voice in guild %s for prayer", guild_id)
             if not is_blip:
                 scoped_state = GuildScopedState(self.db, guild_id)

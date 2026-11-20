@@ -1,128 +1,67 @@
 {% extends "base.html" %}
 {% block title %}{{ guild_name }} · Prayer Bot{% endblock %}
-
 {% block content %}
 <div class="text-center mb-6">
-  <h1 class="text-2xl font-bold">🕌 {{ guild_name }}</h1>
-  <p class="text-slate-400 text-sm">Prayer Schedule</p>
-  {% if is_live %}
-  <div class="mt-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-red-950/40 border border-red-800/60 text-red-400 text-xs font-bold uppercase tracking-widest animate-pulse">
-    <span class="w-2 h-2 rounded-full bg-red-500"></span>
-    Now Live
-  </div>
-  {% endif %}
+<h1 class="text-2xl font-bold">🕌 {{ guild_name }}</h1>
+<p class="text-slate-400 text-sm">Prayer Schedule</p>
+{% if is_live %}
+<div class="mt-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-red-950/40 border border-red-800/60 text-red-400 text-xs font-bold uppercase tracking-widest animate-pulse">
+<span class="w-2 h-2 rounded-full bg-red-500"></span>
+Now Live
 </div>
-
+{% endif %}
+</div>
 {% if next_prayer %}
 {% set emojis = {"buddhist": "☸️", "christian": "✝️", "jewish": "✡️", "sufi": "☪️", "vedantic": "🕉️", "three_daily": "🌅", "psalm_91": "📖"} %}
 {% set labels = {"buddhist": "Buddhist", "christian": "Christian", "jewish": "Jewish", "sufi": "Sufi", "vedantic": "Vedantic", "three_daily": "Three Daily", "psalm_91": "The 91st Psalm"} %}
 <div class="rounded-xl bg-gradient-to-r from-indigo-900/60 to-purple-900/60 border border-indigo-700/50 p-5 mb-6 text-center">
-  <div class="text-xs text-indigo-300 uppercase tracking-wider mb-1">Next Prayer</div>
-  <div class="text-2xl mb-1">{{ emojis.get(next_prayer.prayer_type, "🕌") }} {{ labels.get(next_prayer.prayer_type, next_prayer.prayer_type | title) }}</div>
-  <div class="text-sm text-slate-300">
-    <span class="local-time-next" data-iso="{{ next_prayer.utc_iso }}"></span>
-  </div>
-  <div class="text-xs text-slate-500 mt-1">{{ next_prayer.dt }}</div>
-  <div class="mt-2 inline-block rounded-full bg-indigo-800/60 px-4 py-1 text-sm font-medium text-indigo-200">
-    in {% if next_prayer.in_hours > 0 %}{{ next_prayer.in_hours }}h {% endif %}{{ next_prayer.in_minutes }}m
-  </div>
+<div class="text-xs text-indigo-300 uppercase tracking-wider mb-1">Next Prayer</div>
+<div class="text-2xl mb-1">{{ emojis.get(next_prayer.prayer_type, "🕌") }} {{ labels.get(next_prayer.prayer_type, next_prayer.prayer_type | title) }}</div>
+<div class="text-sm text-slate-300">
+<span>{{ next_prayer.time_utc.strftime('%H:%M') }}</span>
+<span class="text-slate-500">{{ guild_timezone }}</span>
+</div>
+<div class="text-xs text-slate-500 mt-1">{{ next_prayer.dt }}</div>
+<div class="mt-2 inline-block rounded-full bg-indigo-800/60 px-4 py-1 text-sm font-medium text-indigo-200">
+in {% if next_prayer.in_hours > 0 %}{{ next_prayer.in_hours }}h {% endif %}{{ next_prayer.in_minutes }}m
+</div>
 </div>
 {% endif %}
-
 {% if all_guilds|length > 1 %}
 <div class="mb-6">
-  <select onchange="if(this.value) window.location.href='/prayers/public/' + this.value"
-          class="w-full rounded-lg bg-slate-800 border border-slate-700 px-4 py-2.5 text-sm">
-    {% for g in all_guilds %}
-    <option value="{{ g.guild_id }}" {% if g.guild_id == guild_id %}selected{% endif %}>{{ g.name }}</option>
-    {% endfor %}
-  </select>
+<select onchange="if(this.value) window.location.href='/prayers/public/' + this.value"
+class="w-full rounded-lg bg-slate-800 border border-slate-700 px-4 py-2.5 text-sm">
+{% for g in all_guilds %}
+<option value="{{ g.guild_id }}" {% if g.guild_id == guild_id %}selected{% endif %}>{{ g.name }}</option>
+{% endfor %}
+</select>
 </div>
 {% endif %}
-
-<div class="mb-6 flex flex-wrap items-center gap-3">
-  <div class="inline-block rounded-full bg-slate-800 px-4 py-1.5 text-xs text-slate-400" id="tz-badge-container">
-    <span>🕐 Perspective:</span>
-    <select id="tz-selector" onchange="updatePerspective(this.value)"
-            class="bg-transparent border-none text-slate-200 outline-none cursor-pointer">
-      <option value="local">Detecting...</option>
-      {% for tz in all_timezones %}
-      <option value="{{ tz }}">{{ tz }}</option>
-      {% endfor %}
-    </select>
-  </div>
-  <span id="tz-info" class="text-[10px] text-slate-600"></span>
-</div>
-
 {% set emojis = {"buddhist": "☸️", "christian": "✝️", "jewish": "✡️", "sufi": "☪️", "vedantic": "🕉️", "three_daily": "🌅", "psalm_91": "📖"} %}
-
 {% if schedules_by_day %}
 {% for day in schedules_by_day %}
 <div class="mb-6">
-  <div class="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">{{ day.day_name }}</div>
-  {% for row in day.schedules %}
-  <div class="flex items-center gap-3 rounded-lg bg-slate-900 border border-slate-800 p-3 mb-1.5 hover:border-slate-700 transition" data-utc-time="{{ row.schedule.time_utc }}">
-    <div class="text-xl w-8 text-center">{{ emojis.get(row.schedule.prayer_type.value, "🙏") }}</div>
-    <div class="flex-1 min-w-0">
-      <div class="font-medium text-sm">{{ row.schedule.prayer_type.value | title }}</div>
-      <div class="text-xs text-slate-400">
-        <span class="local-time">{{ row.local_time_str }}</span>
-        <span class="text-slate-600 ml-1">UTC {{ row.schedule.time_utc }}</span>
-      </div>
-    </div>
-    <a class="rounded-full bg-indigo-600 hover:bg-indigo-500 px-3 py-1 text-xs font-medium no-underline"
-       href="https://discord.com/channels/{{ guild_id }}/{{ voice_channel_id }}" target="_blank">Join</a>
-  </div>
-  {% endfor %}
+<div class="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">{{ day.day_name }}</div>
+{% for row in day.schedules %}
+<div class="flex items-center gap-3 rounded-lg bg-slate-900 border border-slate-800 p-3 mb-1.5 hover:border-slate-700 transition">
+<div class="text-xl w-8 text-center">{{ emojis.get(row.schedule.prayer_type.value, "🙏") }}</div>
+<div class="flex-1 min-w-0">
+<div class="font-medium text-sm">{{ row.schedule.prayer_type.value | title }}</div>
+<div class="text-xs text-slate-400">
+<span class="local-time">{{ row.schedule.time_utc.strftime('%H:%M') }}</span>
+<span class="text-slate-600 ml-1">{{ guild_timezone }}</span>
+</div>
+</div>
+<a class="rounded-full bg-indigo-600 hover:bg-indigo-500 px-3 py-1 text-xs font-medium no-underline"
+href="https://discord.com/channels/{{ guild_id }}/{{ voice_channel_id }}" target="_blank">Join</a>
+</div>
+{% endfor %}
 </div>
 {% endfor %}
 {% else %}
 <div class="text-center py-16 text-slate-500">
-  <div class="text-4xl mb-3">📅</div>
-  <p>No prayers scheduled yet. Check back soon!</p>
+<div class="text-4xl mb-3">📅</div>
+<p>No prayers scheduled yet. Check back soon!</p>
 </div>
 {% endif %}
-
-<script>
-// Browser timezone for initial default
-const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-let currentTz = browserTz;
-
-// Populate "Detecting..." with actual name
-const localOpt = document.querySelector('#tz-selector option[value="local"]');
-if (localOpt) {
-  localOpt.textContent = 'Local: ' + browserTz;
-  localOpt.value = browserTz;
-}
-document.getElementById('tz-selector').value = browserTz;
-
-function updatePerspective(newTz) {
-  currentTz = newTz;
-  
-  // 1. Update upcoming prayer card
-  const nextEl = document.querySelector('.local-time-next');
-  if (nextEl) {
-    const d = new Date(nextEl.dataset.iso);
-    const options = { timeZone: currentTz, hour: '2-digit', minute: '2-digit' };
-    const localTime = d.toLocaleTimeString('en-US', options);
-    const localDay = d.toLocaleDateString('en-US', { timeZone: currentTz, weekday: 'long' });
-    const localDate = d.toLocaleDateString('en-US', { timeZone: currentTz, day: 'numeric', month: 'short' });
-    nextEl.innerHTML = localTime + ' · ' + localDay + ' ' + localDate + ' <span class="text-slate-500">' + currentTz + '</span>';
-  }
-
-  // 2. Update schedule cards from their UTC source
-  document.querySelectorAll('[data-utc-time]').forEach(card => {
-    const [h, m] = card.dataset.utcTime.split(':').map(Number);
-    const d = new Date();
-    d.setUTCHours(h, m, 0, 0);
-    
-    // Display using selected timezone
-    const localStr = d.toLocaleTimeString('en-US', { timeZone: currentTz, hour12: false, hour: '2-digit', minute: '2-digit' });
-    card.querySelector('.local-time').textContent = localStr;
-  });
-}
-
-// Init
-updatePerspective(currentTz);
-</script>
 {% endblock %}

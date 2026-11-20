@@ -1,255 +1,219 @@
 {% extends "base.html" %}
 {% block title %}Schedule · Prayer Bot{% endblock %}
-
 {% block content %}
 <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
-  <div class="flex items-center gap-3">
-    <h1 class="text-xl font-semibold">{{ guild_name }}</h1>
-    {% if all_guilds|length > 1 %}
-    <select onchange="if(this.value) window.location.href='/prayers/' + this.value"
-            class="rounded bg-slate-800 border border-slate-700 px-2 py-1 text-sm">
-      {% for g in all_guilds %}
-      <option value="{{ g.guild_id }}" {% if g.guild_id == guild_id %}selected{% endif %}>{{ g.name }}</option>
-      {% endfor %}
-    </select>
-    {% endif %}
-  </div>
-  <a href="/prayers/public/{{ guild_id }}" class="text-xs text-slate-400 hover:text-white">👁 Public view</a>
-  <button onclick="leaveVoice('{{ guild_id }}')"
-          class="text-xs rounded bg-red-900/50 hover:bg-red-800/50 border border-red-800/50 px-2 py-1 text-red-300" title="Make bot leave voice channel">🚪 Leave Voice</button>
+<div class="flex items-center gap-3">
+<h1 class="text-xl font-semibold">{{ guild_name }}</h1>
+{% if all_guilds|length > 1 %}
+<select onchange="if(this.value) window.location.href='/prayers/' + this.value"
+class="rounded bg-slate-800 border border-slate-700 px-2 py-1 text-sm">
+{% for g in all_guilds %}
+<option value="{{ g.guild_id }}" {% if g.guild_id == guild_id %}selected{% endif %}>{{ g.name }}</option>
+{% endfor %}
+</select>
+{% endif %}
 </div>
-
+<a href="/prayers/public/{{ guild_id }}" class="text-xs text-slate-400 hover:text-white">👁 Public view</a>
+<button onclick="leaveVoice('{{ guild_id }}')"
+class="text-xs rounded bg-red-900/50 hover:bg-red-800/50 border border-red-800/50 px-2 py-1 text-red-300" title="Make bot leave voice channel">🚪 Leave Voice</button>
+</div>
 <div class="text-xs text-slate-500 mb-4 flex items-center gap-2">
-  <span>🕐 Local Timezone:</span>
-  <select id="tz-selector" name="timezone_name" form="schedule-form" onchange="updatePerspective(this.value)"
-          class="bg-slate-800 border border-slate-700 rounded px-2 py-0.5 text-xs text-slate-300 outline-none focus:border-indigo-500">
-    <option value="local">Detecting...</option>
-    {% for tz in all_timezones %}
-    <option value="{{ tz }}">{{ tz }}</option>
-    {% endfor %}
-  </select>
-  <span id="tz-info" class="text-slate-600"></span>
+<span>🕐 Local Timezone:</span>
+<select id="tz-selector" name="timezone_name" form="schedule-form"
+class="bg-slate-800 border border-slate-700 rounded px-2 py-0.5 text-xs text-slate-300 outline-none focus:border-indigo-500">
+{% for tz in all_timezones %}
+<option value="{{ tz }}">{{ tz }}</option>
+{% endfor %}
+</select>
+<span id="tz-info" class="text-slate-600"></span>
 </div>
 {% set flash_msg = request.query_params.get('flash', '') %}
 {% if flash_msg %}
 <div id="flash-msg" class="mb-4 rounded bg-emerald-900/40 border border-emerald-700 px-3 py-2 text-sm text-emerald-200">{{ flash_msg }}</div>
 {% endif %}
 <div id="feedback" class="hidden rounded px-3 py-2 text-sm mb-3"></div>
-
 <div class="mt-2 mb-6 rounded-lg bg-slate-900 border border-slate-800 p-4">
-  <h2 class="font-semibold mb-3 text-sm text-slate-300">🎛️ Live Controls & Volume</h2>
-
-  <div class="flex flex-wrap items-center gap-4 mb-4">
-    <div class="flex items-center gap-2">
-      <span class="text-xs text-slate-400">Volume:</span>
-      <strong id="volume-display" class="text-sm text-indigo-400">{{ current_volume }}%</strong>
-    </div>
-    <input type="range" id="volume-slider" min="50" max="750" value="{{ current_volume }}"
-           oninput="document.getElementById('volume-label').textContent=this.value+'%'"
-           class="w-full sm:w-48 h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer">
-    <span id="volume-label" class="text-xs text-slate-500 w-10">{{ current_volume }}%</span>
-    <button type="button" onclick="setVolume('{{ guild_id }}')"
-            class="rounded bg-indigo-600 hover:bg-indigo-500 px-3 py-1 text-xs font-medium transition-colors">Apply Volume</button>
-  </div>
-
-  <div class="flex flex-wrap gap-2 pt-2 border-t border-slate-800/50">
-    <button onclick="sendControl('{{ guild_id }}', 'pause')"
-            class="flex-1 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 py-2 text-xs transition-colors">⏸ Pause</button>
-    <button onclick="sendControl('{{ guild_id }}', 'resume')"
-            class="flex-1 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 py-2 text-xs transition-colors">▶ Resume</button>
-    <button onclick="sendControl('{{ guild_id }}', 'skip')"
-            class="flex-1 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 py-2 text-xs transition-colors">⏭ Skip</button>
-  </div>
+<h2 class="font-semibold mb-3 text-sm text-slate-300">🎛️ Live Controls & Volume</h2>
+<div class="flex flex-wrap items-center gap-4 mb-4">
+<div class="flex items-center gap-2">
+<span class="text-xs text-slate-400">Volume:</span>
+<strong id="volume-display" class="text-sm text-indigo-400">{{ current_volume }}%</strong>
 </div>
-
+<input type="range" id="volume-slider" min="50" max="750" value="{{ current_volume }}"
+oninput="document.getElementById('volume-label').textContent=this.value+'%'"
+class="w-full sm:w-48 h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer">
+<span id="volume-label" class="text-xs text-slate-500 w-10">{{ current_volume }}%</span>
+<button type="button" onclick="setVolume('{{ guild_id }}')"
+class="rounded bg-indigo-600 hover:bg-indigo-500 px-3 py-1 text-xs font-medium transition-colors">Apply Volume</button>
+</div>
+<div class="flex flex-wrap gap-2 pt-2 border-t border-slate-800/50">
+<button onclick="sendControl('{{ guild_id }}', 'pause')"
+class="flex-1 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 py-2 text-xs transition-colors">⏸ Pause</button>
+<button onclick="sendControl('{{ guild_id }}', 'resume')"
+class="flex-1 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 py-2 text-xs transition-colors">▶ Resume</button>
+<button onclick="sendControl('{{ guild_id }}', 'skip')"
+class="flex-1 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 py-2 text-xs transition-colors">⏭ Skip</button>
+</div>
+</div>
 <form method="post" action="/prayers/save" id="schedule-form">
-  <input type="hidden" name="guild_id" value="{{ guild_id }}">
-
-  <div class="flex items-center justify-between gap-2 mb-4">
-    <div class="flex gap-2">
-      <button type="button" onclick="bulkAction('enable_all')"
-              class="text-[10px] rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 px-2 py-1 text-slate-300 transition-colors">✅ Enable All</button>
-      <button type="button" onclick="bulkAction('disable_all')"
-              class="text-[10px] rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 px-2 py-1 text-slate-300 transition-colors">❌ Disable All</button>
-    </div>
-    <button type="submit" class="rounded bg-indigo-600 hover:bg-indigo-500 px-4 py-1.5 text-xs font-medium transition-colors">Save Schedule</button>
-  </div>
-
-  {% set days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] %}
-  {% set prayer_types = ["buddhist", "christian", "jewish", "sufi", "vedantic", "three_daily", "psalm_91"] %}
-  {% set prayer_labels = {"buddhist": "☸️ Buddhist", "christian": "✝️ Christian", "jewish": "✡️ Jewish", "sufi": "☪️ Sufi", "vedantic": "🕉️ Vedantic", "three_daily": "🌅 Three Daily", "psalm_91": "📖 The 91st Psalm"} %}
-
-  {% for day_idx in range(7) %}
-  {% set day_schedules = schedules | selectattr("day_of_week", "equalto", day_idx) | list %}
-  <div class="rounded-lg bg-slate-900 border border-slate-800 p-4 mb-3">
-    <div class="text-sm font-semibold text-slate-300 mb-3">{{ days[day_idx] }}</div>
-    {% for slot_num in range(3) %}
-    {% set sched = day_schedules[slot_num] if slot_num < day_schedules|length else None %}
-    <div class="flex items-center gap-2 py-1.5 {% if not loop.last %}border-b border-slate-800/50{% endif %}">
-      <span class="text-xs text-slate-600 w-4">{{ slot_num + 1 }}</span>
-      <input type="time" name="time_{{ sched.id if sched else 'new_' + day_idx|string + '_' + slot_num|string }}"
-             class="time-inp bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs w-24"
-             value="{{ sched.time_utc if sched else '' }}" data-id="{{ sched.id if sched else '' }}" data-utc="{{ sched.time_utc if sched else '' }}">
-      <select name="prayer_{{ sched.id if sched else 'new_' + day_idx|string + '_' + slot_num|string }}"
-              class="flex-1 bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs">
-        <option value="">— none —</option>
-        {% for pt in prayer_types %}
-        <option value="{{ pt }}" {% if sched and sched.prayer_type.value == pt %}selected{% endif %}>{{ prayer_labels[pt] }}</option>
-        {% endfor %}
-      </select>
-      <input type="checkbox" name="enabled_{{ sched.id if sched else 'new_' + day_idx|string + '_' + slot_num|string }}"
-             {% if sched and sched.enabled %}checked{% endif %} class="h-3.5 w-3.5">
-      {% if sched and sched.enabled %}
-      <button type="button" onclick="playNow(this, '{{ sched.id }}')"
-              class="text-emerald-500 hover:text-emerald-400 text-xs px-1" title="Play Now">▶</button>
-      {% endif %}
-    </div>
-    {% endfor %}
-  </div>
-  {% endfor %}
-
-  <button type="submit" class="w-full rounded bg-indigo-600 hover:bg-indigo-500 py-3 text-sm font-medium mt-2">Save Schedule</button>
+<input type="hidden" name="guild_id" value="{{ guild_id }}">
+<div class="flex items-center justify-between gap-2 mb-4">
+<div class="flex gap-2">
+<button type="button" onclick="bulkAction('enable_all')"
+class="text-[10px] rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 px-2 py-1 text-slate-300 transition-colors">✅ Enable All</button>
+<button type="button" onclick="bulkAction('disable_all')"
+class="text-[10px] rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 px-2 py-1 text-slate-300 transition-colors">❌ Disable All</button>
+</div>
+<button type="submit" class="rounded bg-indigo-600 hover:bg-indigo-500 px-4 py-1.5 text-xs font-medium transition-colors">Save Schedule</button>
+</div>
+{% set days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] %}
+{% set prayer_types = ["buddhist", "christian", "jewish", "sufi", "vedantic", "three_daily", "psalm_91"] %}
+{% set prayer_labels = {"buddhist": "☸️ Buddhist", "christian": "✝️ Christian", "jewish": "✡️ Jewish", "sufi": "☪️ Sufi", "vedantic": "🕉️ Vedantic", "three_daily": "🌅 Three Daily", "psalm_91": "📖 The 91st Psalm"} %}
+{% for day_idx in range(7) %}
+{% set day_schedules = schedules | selectattr("day_of_week", "equalto", day_idx) | list %}
+<div class="rounded-lg bg-slate-900 border border-slate-800 p-4 mb-3">
+<div class="text-sm font-semibold text-slate-300 mb-3">{{ days[day_idx] }}</div>
+{% for slot_num in range(3) %}
+{% set sched = day_schedules[slot_num] if slot_num < day_schedules|length else None %}
+<div class="flex items-center gap-2 py-1.5 {% if not loop.last %}border-b border-slate-800/50{% endif %}">
+<span class="text-xs text-slate-600 w-4">{{ slot_num + 1 }}</span>
+<input type="time" name="time_{{ sched.id if sched else 'new_' + day_idx|string + '_' + slot_num|string }}"
+class="time-inp bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs w-24"
+value="{{ sched.time_utc if sched else '' }}" data-id="{{ sched.id if sched else '' }}" >
+<select name="prayer_{{ sched.id if sched else 'new_' + day_idx|string + '_' + slot_num|string }}"
+class="flex-1 bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs">
+<option value="">— none —</option>
+{% for pt in prayer_types %}
+<option value="{{ pt }}" {% if sched and sched.prayer_type.value == pt %}selected{% endif %}>{{ prayer_labels[pt] }}</option>
+{% endfor %}
+</select>
+<input type="checkbox" name="enabled_{{ sched.id if sched else 'new_' + day_idx|string + '_' + slot_num|string }}"
+{% if sched and sched.enabled %}checked{% endif %} class="h-3.5 w-3.5">
+{% if sched and sched.enabled %}
+<button type="button" onclick="playNow(this, '{{ sched.id }}')"
+class="text-emerald-500 hover:text-emerald-400 text-xs px-1" title="Play Now">▶</button>
+{% endif %}
+</div>
+{% endfor %}
+</div>
+{% endfor %}
+<button type="submit" class="w-full rounded bg-indigo-600 hover:bg-indigo-500 py-3 text-sm font-medium mt-2">Save Schedule</button>
 </form>
-
 <script>
-// Browser timezone for initial default
-const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-let currentTz = browserTz;
-
-// Populate "Detecting..." with actual name
-const localOpt = document.querySelector('#tz-selector option[value="local"]');
-if (localOpt) {
-  localOpt.textContent = 'Local: ' + browserTz;
-  localOpt.value = browserTz;
-}
-document.getElementById('tz-selector').value = browserTz;
-
-function updatePerspective(newTz) {
-  currentTz = newTz;
-  
-  // Re-render all inputs from their UTC source using client-side display only
-  // The official "save" now happens server-side for DST accuracy
-  document.querySelectorAll('.time-inp').forEach(inp => {
-    if (!inp.dataset.utc) return;
-    const [h,m] = inp.dataset.utc.split(':').map(Number);
-    const d = new Date();
-    d.setUTCHours(h, m, 0, 0);
-    
-    // Display using browser/selected timezone
-    const localStr = d.toLocaleTimeString('en-US', { timeZone: currentTz, hour12: false, hour: '2-digit', minute: '2-digit' });
-    inp.value = localStr;
-  });
-}
-
-// Init
-updatePerspective(currentTz);
-
-// Submit: simply send the local values, server handles UTC conversion based on timezone_name
-document.getElementById('schedule-form').addEventListener('submit', function(e) {
-  // No client-side conversion needed anymore
-  this.submit();
-});
-
+// Times are wall clock in the guild's zone; nothing to convert here.
+document.getElementById('tz-selector').value = {{ guild_timezone | tojson }};
+// Submit: the server stores these wall-clock values against the chosen zone
 async function playNow(btn, scheduleId) {
-  btn.textContent = '⋯'; btn.disabled = true;
-  const fb = document.getElementById('feedback');
-  try {
-    const r = await fetch('/prayers/adhoc-by-id', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-      body: new URLSearchParams({schedule_id: scheduleId})
-    });
-    fb.textContent = '✅ Queued';
-    fb.className = 'rounded bg-emerald-900/40 border border-emerald-700 px-3 py-2 text-sm text-emerald-200 mb-3';
-  } catch(e) {
-    fb.textContent = '❌ Failed';
-    fb.className = 'rounded bg-red-900/40 border border-red-700 px-3 py-2 text-sm text-red-200 mb-3';
-  }
-  btn.textContent = '▶'; btn.disabled = false;
-  setTimeout(() => fb.className = 'hidden', 3000);
+btn.textContent = '⋯'; btn.disabled = true;
+const fb = document.getElementById('feedback');
+try {
+const r = await fetch('/prayers/adhoc-by-id', {
+method: 'POST',
+headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+body: new URLSearchParams({schedule_id: scheduleId})
+});
+const {command_id} = await r.json();
+const okCls = 'rounded bg-emerald-900/40 border border-emerald-700 px-3 py-2 text-sm text-emerald-200 mb-3';
+const errCls = 'rounded bg-red-900/40 border border-red-700 px-3 py-2 text-sm text-red-200 mb-3';
+fb.textContent = '⏳ Queued';
+fb.className = okCls;
+let done = false;
+for (let i = 0; i < 40 && command_id; i++) {
+await new Promise(res => setTimeout(res, 1000));
+const s = await (await fetch('/commands/' + command_id)).json();
+if (!s.done) continue;
+const ok = !!s.result && s.result.startsWith('ok');
+fb.textContent = ok ? '▶ Playing' : '❌ ' + (s.result || 'no response');
+fb.className = ok ? okCls : errCls;
+done = true;
+break;
 }
-
+if (!done) { fb.textContent = '⏳ Still queued — no listener yet'; fb.className = errCls; }
+} catch(e) {
+fb.textContent = '❌ Failed';
+fb.className = 'rounded bg-red-900/40 border border-red-700 px-3 py-2 text-sm text-red-200 mb-3';
+}
+btn.textContent = '▶'; btn.disabled = false;
+setTimeout(() => fb.className = 'hidden', 6000);
+}
 async function leaveVoice(guildId) {
-  const fb = document.getElementById('feedback');
-  try {
-    const r = await fetch('/controls', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-      body: new URLSearchParams({guild_id: guildId, action: 'disconnect'})
-    });
-    fb.textContent = '🚪 Sent leave command — bot should disconnect shortly';
-    fb.className = 'rounded bg-emerald-900/40 border border-emerald-700 px-3 py-2 text-sm text-emerald-200 mb-3';
-  } catch(e) {
-    fb.textContent = '❌ Failed to send leave command';
-    fb.className = 'rounded bg-red-900/40 border border-red-700 px-3 py-2 text-sm text-red-200 mb-3';
-  }
-  setTimeout(() => fb.className = 'hidden', 3000);
+const fb = document.getElementById('feedback');
+try {
+const r = await fetch('/controls', {
+method: 'POST',
+headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+body: new URLSearchParams({guild_id: guildId, action: 'disconnect'})
+});
+fb.textContent = '🚪 Sent leave command — bot should disconnect shortly';
+if (!done) { fb.textContent = '⏳ Still queued — no listener yet'; fb.className = errCls; }
+} catch(e) {
+fb.textContent = '❌ Failed to send leave command';
+fb.className = 'rounded bg-red-900/40 border border-red-700 px-3 py-2 text-sm text-red-200 mb-3';
 }
-
+setTimeout(() => fb.className = 'hidden', 6000);
+}
 async function bulkAction(action) {
-  const fb = document.getElementById('feedback');
-  const guildId = document.querySelector('input[name="guild_id"]').value;
-  try {
-    const r = await fetch('/prayers/bulk-action', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-      body: new URLSearchParams({guild_id: guildId, action: action})
-    });
-    const data = await r.json();
-    if (data.ok) {
-      window.location.reload();
-    } else {
-      throw new Error(data.msg);
-    }
-  } catch(e) {
-    fb.textContent = '❌ Action failed: ' + e.message;
-    fb.className = 'rounded bg-red-900/40 border border-red-700 px-3 py-2 text-sm text-red-200 mb-3';
-    fb.classList.remove('hidden');
-  }
+const fb = document.getElementById('feedback');
+const guildId = document.querySelector('input[name="guild_id"]').value;
+try {
+const r = await fetch('/prayers/bulk-action', {
+method: 'POST',
+headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+body: new URLSearchParams({guild_id: guildId, action: action})
+});
+const data = await r.json();
+if (data.ok) {
+window.location.reload();
+} else {
+throw new Error(data.msg);
 }
-
+} catch(e) {
+fb.textContent = '❌ Action failed: ' + e.message;
+fb.className = 'rounded bg-red-900/40 border border-red-700 px-3 py-2 text-sm text-red-200 mb-3';
+fb.classList.remove('hidden');
+}
+}
 async function setVolume(guildId) {
-  const slider = document.getElementById('volume-slider');
-  const display = document.getElementById('volume-display');
-  const vol = slider.value;
-  const fb = document.getElementById('feedback');
-  display.textContent = vol + '%';
-  try {
-    const r = await fetch('/controls/volume', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-      body: new URLSearchParams({guild_id: guildId, volume_percent: vol})
-    });
-    const data = await r.json();
-    fb.textContent = '✅ Volume set to ' + vol + '%';
-    fb.className = 'rounded bg-emerald-900/40 border border-emerald-700 px-3 py-2 text-sm text-emerald-200 mb-3';
-    fb.classList.remove('hidden');
-    setTimeout(() => fb.classList.add('hidden'), 2000);
-  } catch(e) { 
-    console.error(e); 
-    fb.textContent = '❌ Failed to set volume';
-    fb.className = 'rounded bg-red-900/40 border border-red-700 px-3 py-2 text-sm text-red-200 mb-3';
-    fb.classList.remove('hidden');
-  }
+const slider = document.getElementById('volume-slider');
+const display = document.getElementById('volume-display');
+const vol = slider.value;
+const fb = document.getElementById('feedback');
+display.textContent = vol + '%';
+try {
+const r = await fetch('/controls/volume', {
+method: 'POST',
+headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+body: new URLSearchParams({guild_id: guildId, volume_percent: vol})
+});
+const data = await r.json();
+fb.textContent = '✅ Volume set to ' + vol + '%';
+fb.className = 'rounded bg-emerald-900/40 border border-emerald-700 px-3 py-2 text-sm text-emerald-200 mb-3';
+fb.classList.remove('hidden');
+setTimeout(() => fb.classList.add('hidden'), 2000);
+} catch(e) { 
+console.error(e); 
+fb.textContent = '❌ Failed to set volume';
+fb.className = 'rounded bg-red-900/40 border border-red-700 px-3 py-2 text-sm text-red-200 mb-3';
+fb.classList.remove('hidden');
 }
-
+}
 async function sendControl(guildId, action) {
-  const fb = document.getElementById('feedback');
-  try {
-    const r = await fetch('/controls', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-      body: new URLSearchParams({guild_id: guildId, action: action})
-    });
-    fb.textContent = '✅ ' + action.toUpperCase() + ' sent';
-    fb.className = 'rounded bg-emerald-900/40 border border-emerald-700 px-3 py-2 text-sm text-emerald-200 mb-3';
-    fb.classList.remove('hidden');
-    setTimeout(() => fb.classList.add('hidden'), 2000);
-  } catch(e) {
-    fb.textContent = '❌ ' + action.toUpperCase() + ' failed';
-    fb.className = 'rounded bg-red-900/40 border border-red-700 px-3 py-2 text-sm text-red-200 mb-3';
-    fb.classList.remove('hidden');
-  }
+const fb = document.getElementById('feedback');
+try {
+const r = await fetch('/controls', {
+method: 'POST',
+headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+body: new URLSearchParams({guild_id: guildId, action: action})
+});
+fb.textContent = '✅ ' + action.toUpperCase() + ' sent';
+fb.className = 'rounded bg-emerald-900/40 border border-emerald-700 px-3 py-2 text-sm text-emerald-200 mb-3';
+fb.classList.remove('hidden');
+setTimeout(() => fb.classList.add('hidden'), 2000);
+} catch(e) {
+fb.textContent = '❌ ' + action.toUpperCase() + ' failed';
+fb.className = 'rounded bg-red-900/40 border border-red-700 px-3 py-2 text-sm text-red-200 mb-3';
+fb.classList.remove('hidden');
+}
 }
 </script>
 {% endblock %}

@@ -1,4 +1,3 @@
-"""Discord Prayer Bot — main entry point."""
 
 from __future__ import annotations
 
@@ -25,16 +24,11 @@ log = logging.getLogger(__name__)
 TOKEN = os.environ.get("DISCORD_BOT_TOKEN", "")
 DB_PATH = os.environ.get("DATABASE_PATH", "./data/prayer_bot.db")
 
-
 class PrayerBot(DailyDrawV2Mixin, PrayerBotRuntimeMixin, discord.Client):
     def __init__(self) -> None:
         intents = discord.Intents.default()
         intents.voice_states = True
         intents.guilds = True
-        # Privileged: Server Members is required so the daily draw can read
-        # the key-role member list. Message Content is NOT required (channel
-        # setting is a slash command + dashboard). Enable Server Members in
-        # the Discord Developer Portal or login fails with PrivilegedIntentsRequired.
         intents.members = True
         super().__init__(intents=intents)
 
@@ -73,9 +67,7 @@ class PrayerBot(DailyDrawV2Mixin, PrayerBotRuntimeMixin, discord.Client):
     def _daily_draw_log_path() -> str:
         return os.environ.get("PRAYER_DRAW_LOG_PATH", "./data/daily_draw_log.txt")
 
-
 install_play_hooks(PrayerBot)
-
 
 async def main() -> None:
     if not TOKEN:
@@ -90,7 +82,6 @@ async def main() -> None:
 
     async with bot:
         await bot.start(TOKEN)
-
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")

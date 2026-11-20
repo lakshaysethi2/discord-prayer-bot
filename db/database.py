@@ -1,4 +1,3 @@
-"""SQLite connection factory + migration runner for the prayer bot."""
 
 from __future__ import annotations
 
@@ -14,20 +13,10 @@ from db.models import SCHEMA
 _DEFAULT_ENV_KEY = "DATABASE_PATH"
 _DEFAULT_PATH = "./data/prayer_bot.db"
 
-
 def get_default_path() -> str:
-    """Read `DATABASE_PATH` from env or fall back to `./data/prayer_bot.db`."""
     return os.environ.get(_DEFAULT_ENV_KEY, _DEFAULT_PATH)
 
-
 class Database:
-    """Thin wrapper around a `sqlite3.Connection` with WAL + migrations.
-
-    The wrapper is intentionally minimal — most callers just want
-    `.execute(...)`, `.executemany(...)`, or the `.transaction()`
-    context manager. All writes go through a single connection, guarded
-    by a lock, which is fine for our write volume.
-    """
 
     def __init__(self, path: str | os.PathLike[str] | None = None) -> None:
         self.path = str(path) if path is not None else get_default_path()
@@ -81,7 +70,6 @@ class Database:
         cur.close()
 
     def migrate(self) -> None:
-        """Apply the schema DDLs. Safe to call multiple times."""
         with self._lock:
             cur = self._conn.cursor()
             try:
@@ -94,7 +82,6 @@ class Database:
                 self._ensure_column(cur, "guild_configs", "post_stay_minutes", "INTEGER DEFAULT 5")
                 self._ensure_column(cur, "guild_configs", "status_blip_enabled", "BOOLEAN DEFAULT 0")
                 self._ensure_column(cur, "guild_configs", "logging_channel_id", "TEXT")
-                self._ensure_column(cur, "watch_sessions", "guild_id", "TEXT NOT NULL DEFAULT ''")
                 self._ensure_column(cur, "guild_channels", "parent_id", "TEXT")
                 self._ensure_column(cur, "daily_draw_state", "active_cycle_date", "TEXT")
                 self._ensure_column(cur, "daily_draw_state", "active_slot_index", "INTEGER")
@@ -103,6 +90,7 @@ class Database:
                     cur, "daily_draw_state", "archive_button_removed", "INTEGER DEFAULT 0"
                 )
                 self._ensure_column(cur, "prayer_schedules", "time_utc", "TEXT")
+
                 existing_cols = {row["name"] for row in cur.execute("PRAGMA table_info(prayer_schedules)").fetchall()}
                 if "time" in existing_cols and "time_utc" in existing_cols:
                     cur.execute("UPDATE prayer_schedules SET time_utc = time WHERE time_utc IS NULL OR time_utc = ''")
@@ -111,7 +99,6 @@ class Database:
 
     @staticmethod
     def _ensure_column(cur: sqlite3.Cursor, table: str, column: str, definition: str) -> None:
-        """Add `column` to `table` if it isn't there yet (idempotent)."""
         existing = {row["name"] for row in cur.execute(f"PRAGMA table_info({table})").fetchall()}
         if column not in existing:
             cur.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
@@ -175,7 +162,6 @@ class Database:
     def close(self) -> None:
         with self._lock:
             self._conn.close()
-
 
 def connect(path: str | os.PathLike[str] | None = None) -> Database:
     return Database(path)

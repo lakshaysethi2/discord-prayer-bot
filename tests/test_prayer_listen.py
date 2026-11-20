@@ -14,7 +14,6 @@ from db.prayer_listen import (
 )
 from bot.prayer_listen_logic import should_credit, format_row, embed_title
 
-
 def test_migrate_creates_tables(tmp_path):
     with Database(str(tmp_path / "t.db")) as db:
         names = {r["name"] for r in db.fetchall(
@@ -23,7 +22,6 @@ def test_migrate_creates_tables(tmp_path):
         assert "prayer_listen_sessions" in names
         assert "prayer_listen_totals" in names
 
-
 def test_short_session_dropped(tmp_path):
     with Database(str(tmp_path / "t.db")) as db:
         t0 = datetime(2026, 9, 7, 12, 0, 0)
@@ -31,7 +29,6 @@ def test_short_session_dropped(tmp_path):
         close_session(db, "g", "u", at=t0 + timedelta(seconds=10))
         assert db.fetchone("SELECT COUNT(*) AS n FROM prayer_listen_sessions")["n"] == 0
         assert top_listeners(db, "g", now=t0) == []
-
 
 def test_session_credited_and_checkpoint_no_double(tmp_path):
     with Database(str(tmp_path / "t.db")) as db:
@@ -42,7 +39,6 @@ def test_session_credited_and_checkpoint_no_double(tmp_path):
         rows = top_listeners(db, "g", "alltime")
         assert len(rows) == 1
         assert rows[0]["seconds"] == 70
-
 
 def test_open_session_is_idempotent(tmp_path):
     with Database(str(tmp_path / "t.db")) as db:
@@ -55,7 +51,6 @@ def test_open_session_is_idempotent(tmp_path):
         assert rows[0]["seconds"] == 80
         assert db.fetchone("SELECT COUNT(*) AS n FROM prayer_listen_sessions")["n"] == 1
 
-
 def test_orphan_close_uses_checkpoint(tmp_path):
     with Database(str(tmp_path / "t.db")) as db:
         t0 = datetime(2026, 9, 7, 12, 0, 0)
@@ -64,7 +59,6 @@ def test_orphan_close_uses_checkpoint(tmp_path):
         close_orphan_sessions(db)
         rows = top_listeners(db, "g", "alltime")
         assert rows[0]["seconds"] == 40
-
 
 def test_week_rollover_resets_weekly(tmp_path):
     with Database(str(tmp_path / "t.db")) as db:
@@ -80,7 +74,6 @@ def test_week_rollover_resets_weekly(tmp_path):
         assert alltime == 90
         assert week_key(t1) != week_key(t0)
 
-
 def test_weekly_query_ignores_previous_week(tmp_path):
     with Database(str(tmp_path / "t.db")) as db:
         t0 = datetime(2026, 9, 7, 12, 0, 0)  # week 37
@@ -91,7 +84,6 @@ def test_weekly_query_ignores_previous_week(tmp_path):
         assert user_rank(db, "g", "u", "weekly", now=t1) is None
         assert user_rank(db, "g", "u", "alltime")["seconds"] == 40
 
-
 def test_guild_isolation(tmp_path):
     with Database(str(tmp_path / "t.db")) as db:
         t0 = datetime(2026, 9, 7, 12, 0, 0)
@@ -99,7 +91,6 @@ def test_guild_isolation(tmp_path):
         close_session(db, "g1", "u", at=t0 + timedelta(seconds=40))
         assert top_listeners(db, "g2") == []
         assert user_rank(db, "g1", "u", "alltime")["rank"] == 1
-
 
 def test_credit_guards():
     assert should_credit(
@@ -118,7 +109,6 @@ def test_credit_guards():
         member_is_bot=False, is_self=False, prayer_session_open=False,
         tts_playing=False, in_prayer_vc=True, bot_in_prayer_vc=True,
     )
-
 
 def test_format():
     assert format_hms(0) == "0s"

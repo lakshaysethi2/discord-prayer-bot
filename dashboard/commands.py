@@ -1,15 +1,3 @@
-"""Dashboard → Bot control-plane queue.
-
-We use the shared SQLite `dashboard_commands` table (created in `db.models`)
-so we don't need to run an HTTP server inside the bot process just to accept
-skip/pause/resume requests.
-
-Bot reads pending rows (executed_at IS NULL) on a short poll interval, executes
-them, and writes back `executed_at` + `result`.
-
-Dashboard writes; bot reads and updates. There's at most one bot process
-so no coordination is needed beyond SQLite's own transactions.
-"""
 
 from __future__ import annotations
 
@@ -19,19 +7,11 @@ from typing import Any
 
 from db.database import Database
 
-# Whitelist of known commands. Anything else is rejected at write time.
-# Commands + their payload shape:
-#   skip / pause / resume / refresh_playlist  -> no payload
-#   play_track {"track_id": "<id>"}          -> jump cursor & play immediately
-#   set_volume {"volume_percent": <int>}      -> global volume
-#   apply_server {"guild_id": "<id>"}        -> live-apply a dashboard server
-#                                               save (connect/disconnect/re-point)
 VALID_COMMANDS = frozenset(
     {
         "skip",
         "pause",
         "resume",
-        "refresh_playlist",
         "play_track",
         "set_volume",
         "apply_server",
@@ -39,10 +19,8 @@ VALID_COMMANDS = frozenset(
     }
 )
 
-
 class UnknownCommandError(ValueError):
     pass
-
 
 @dataclass(slots=True, frozen=True)
 class CommandRow:
@@ -53,7 +31,6 @@ class CommandRow:
     requested_at: str
     executed_at: str | None
     result: str | None
-
 
 def enqueue(
     db: Database,
@@ -70,7 +47,6 @@ def enqueue(
     )
     return int(cur.lastrowid)
 
-
 def pending(db: Database, limit: int = 10) -> list[CommandRow]:
     rows = db.fetchall(
         "SELECT * FROM dashboard_commands WHERE executed_at IS NULL "
@@ -79,7 +55,6 @@ def pending(db: Database, limit: int = 10) -> list[CommandRow]:
     )
     return [_row(r) for r in rows]
 
-
 def recent(db: Database, limit: int = 20) -> list[CommandRow]:
     rows = db.fetchall(
         "SELECT * FROM dashboard_commands ORDER BY command_id DESC LIMIT ?",
@@ -87,13 +62,11 @@ def recent(db: Database, limit: int = 20) -> list[CommandRow]:
     )
     return [_row(r) for r in rows]
 
-
 def mark_done(db: Database, command_id: int, *, result: str = "ok") -> None:
     db.execute(
         "UPDATE dashboard_commands SET executed_at=CURRENT_TIMESTAMP, result=? WHERE command_id=?",
         (result, command_id),
     )
-
 
 def _row(r) -> CommandRow:
     payload = None

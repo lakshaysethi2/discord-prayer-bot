@@ -1,4 +1,3 @@
-"""Prayer-listen sessions and totals (issue #9). Guild-scoped."""
 
 from __future__ import annotations
 
@@ -8,22 +7,18 @@ from db.database import Database
 
 MIN_SESSION_SECONDS = 30
 
-
 def _now_utc() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
-
 
 def week_key(now: datetime | None = None) -> str:
     dt = now or _now_utc()
     iso = dt.isocalendar()
     return f"{iso.year}-W{iso.week:02d}"
 
-
 def week_monday_iso(key: str) -> str:
     year_s, week_s = key.split("-W")
     year, week = int(year_s), int(week_s)
     return datetime.fromisocalendar(year, week, 1).date().isoformat()
-
 
 def format_hms(total_seconds: int) -> str:
     secs = max(int(total_seconds), 0)
@@ -35,7 +30,6 @@ def format_hms(total_seconds: int) -> str:
         return f"{minutes}m"
     return f"{seconds}s"
 
-
 def _parse(value) -> datetime | None:
     if value is None:
         return None
@@ -45,7 +39,6 @@ def _parse(value) -> datetime | None:
         return datetime.fromisoformat(str(value))
     except ValueError:
         return None
-
 
 def open_session(db: Database, guild_id: str, user_id: str, username: str,
                  server_nickname: str | None, at: datetime | None = None) -> int:
@@ -70,7 +63,6 @@ def open_session(db: Database, guild_id: str, user_id: str, username: str,
     )
     row = db.fetchone("SELECT last_insert_rowid() AS id")
     return int(row["id"])
-
 
 def _credit(db: Database, guild_id: str, user_id: str, username: str,
             server_nickname: str | None, increment: int, at: datetime) -> None:
@@ -115,7 +107,6 @@ def _credit(db: Database, guild_id: str, user_id: str, username: str,
         ),
     )
 
-
 def close_session(db: Database, guild_id: str, user_id: str, at: datetime | None = None) -> int:
     now = at or _now_utc()
     row = db.fetchone(
@@ -142,7 +133,6 @@ def close_session(db: Database, guild_id: str, user_id: str, at: datetime | None
     _credit(db, guild_id, user_id, row["username"], row["server_nickname"], increment, now)
     return increment
 
-
 def checkpoint_open(db: Database, at: datetime | None = None) -> None:
     now = at or _now_utc()
     rows = db.fetchall("SELECT * FROM prayer_listen_sessions WHERE left_at IS NULL")
@@ -155,7 +145,6 @@ def checkpoint_open(db: Database, at: datetime | None = None) -> None:
             (now.isoformat(sep=" "), row["session_id"]),
         )
 
-
 def close_orphan_sessions(db: Database) -> None:
     rows = db.fetchall("SELECT * FROM prayer_listen_sessions WHERE left_at IS NULL")
     for row in rows:
@@ -165,7 +154,6 @@ def close_orphan_sessions(db: Database) -> None:
             continue
         close_session(db, row["guild_id"], row["user_id"], at=end)
 
-
 def close_guild_sessions(db: Database, guild_id: str, at: datetime | None = None) -> None:
     rows = db.fetchall(
         "SELECT user_id FROM prayer_listen_sessions WHERE guild_id=? AND left_at IS NULL",
@@ -173,7 +161,6 @@ def close_guild_sessions(db: Database, guild_id: str, at: datetime | None = None
     )
     for row in rows:
         close_session(db, guild_id, row["user_id"], at=at)
-
 
 def top_listeners(db: Database, guild_id: str, period: str = "weekly", limit: int = 10,
                  now: datetime | None = None):
@@ -199,7 +186,6 @@ def top_listeners(db: Database, guild_id: str, period: str = "weekly", limit: in
         """,
         (guild_id, limit),
     )
-
 
 def user_rank(db: Database, guild_id: str, user_id: str, period: str = "weekly",
               now: datetime | None = None):

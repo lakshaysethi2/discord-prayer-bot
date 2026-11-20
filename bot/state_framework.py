@@ -1,9 +1,3 @@
-"""Typed adapter over the `bot_state` table.
-
-The bot_state table is a key/value store used to remember playback position,
-current track, message ids, and the last monthly-reset month. This module
-adds a small typed layer so bot code doesn't sprinkle stringly-typed calls.
-"""
 
 from __future__ import annotations
 
@@ -12,10 +6,8 @@ from dataclasses import dataclass
 from db.database import Database
 from db.models import BOT_STATE_KEYS, BotStateKey
 
-
 @dataclass(slots=True)
 class PlaybackSnapshot:
-    """Everything needed to resume playback after a restart or pause."""
 
     current_track_id: str | None
     playback_position_seconds: int
@@ -23,15 +15,12 @@ class PlaybackSnapshot:
     now_playing_message_id: int | None
     playlist_position: int
 
-
 class BotState:
     def __init__(self, db: Database) -> None:
         self.db = db
 
-    # ---------------------------------------------------------- raw kv API
     def get(self, key: str, default: str | None = None) -> str | None:
         if key not in BOT_STATE_KEYS:
-            # Guard against typos — every persistent key should be declared.
             raise KeyError(f"unknown bot_state key {key!r}")
         return self.db.get_state(key, default)
 
@@ -40,7 +29,6 @@ class BotState:
             raise KeyError(f"unknown bot_state key {key!r}")
         self.db.set_state(key, value)
 
-    # ------------------------------------------------- current track/position
     @property
     def current_track_id(self) -> str | None:
         v = self.get(BotStateKey.CURRENT_TRACK_ID)
@@ -110,7 +98,6 @@ class BotState:
 
     @property
     def stream_volume_percent(self) -> int:
-        """Persistent global FFmpeg gain, constrained to the admin UI range."""
         v = self.get(BotStateKey.STREAM_VOLUME_PERCENT, "100")
         try:
             value = int(v) if v else 100
@@ -122,16 +109,6 @@ class BotState:
     def stream_volume_percent(self, value: int) -> None:
         self.set(BotStateKey.STREAM_VOLUME_PERCENT, min(750, max(50, int(value))))
 
-    @property
-    def last_monthly_reset(self) -> str | None:
-        v = self.get(BotStateKey.LAST_MONTHLY_RESET)
-        return v if v else None
-
-    @last_monthly_reset.setter
-    def last_monthly_reset(self, value: str | None) -> None:
-        self.set(BotStateKey.LAST_MONTHLY_RESET, value or "")
-
-    # ------------------------------------------------------------- snapshot
     def snapshot(self) -> PlaybackSnapshot:
         return PlaybackSnapshot(
             current_track_id=self.current_track_id,
@@ -141,15 +118,7 @@ class BotState:
             playlist_position=self.playlist_position,
         )
 
-
 class GuildScopedState(BotState):
-    """A BotState view scoped to one guild for all playback state.
-
-    The prayer bot has independent schedules per guild, so each server
-    keeps its own playback state (current track, position, paused flag)
-    plus its own Now Playing embed message id. This subclass scopes all
-    keys to the guild_id to avoid cross-server state clobbering.
-    """
 
     def __init__(self, db: Database, guild_id: str) -> None:
         super().__init__(db)

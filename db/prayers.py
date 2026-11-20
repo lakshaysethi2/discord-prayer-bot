@@ -1,26 +1,11 @@
-"""Prayer schedule DB layer — keeps `discord-radio` migration/test patterns.
-
-Timezone rules:
-- Prayer times stored in DB as UTC (`time_utc` column).
-- Per-guild timezone offset (`timezone_offset_hours` on `guild_configs`) converts
-  UTC → local for display/playback.
-"""
 
 from __future__ import annotations
 
-import sqlite3
 from datetime import time
-from typing import List, Optional
+from typing import List
 
 from db.database import Database
-from db.models import PrayerSchedule, PrayerType, PRAYER_AUDIO_MAP, GuildConfig
-
-
-def create_prayer_tables(db: Database) -> None:
-    # Prayer-specific DDL is included in SCHEMA via db/models.py,
-    # but we keep this helper for backward compatibility.
-    pass
-
+from db.models import PrayerSchedule, PrayerType, PRAYER_AUDIO_MAP
 
 def get_weekly_schedule(db: Database, guild_id: str) -> List[PrayerSchedule]:
     rows = db.fetchall("""
@@ -41,7 +26,6 @@ def get_weekly_schedule(db: Database, guild_id: str) -> List[PrayerSchedule]:
             created_at=r["created_at"],
         ))
     return schedules
-
 
 def upsert_schedule(
     db: Database,
@@ -64,18 +48,11 @@ def upsert_schedule(
     )
     return row["id"] if row else -1
 
-
 def update_schedule(db: Database, schedule_id: int, t_utc: time, enabled: bool) -> None:
-    db.execute("""
-        UPDATE prayer_schedules
-        SET time_utc = ?, enabled = ?
-        WHERE id = ?
-    """, (t_utc.isoformat(), int(enabled), schedule_id))
-
-
-def delete_schedule(db: Database, schedule_id: int) -> None:
-    db.execute("DELETE FROM prayer_schedules WHERE id = ?", (schedule_id,))
-
+    db.execute(
+        "UPDATE prayer_schedules SET time_utc = ?, enabled = ? WHERE id = ?",
+        (t_utc.isoformat(), int(enabled), schedule_id),
+    )
 
 def log_prayer_played(
     db: Database, guild_id: str, schedule_id: int | None, prayer_type: PrayerType, success: bool
@@ -85,43 +62,32 @@ def log_prayer_played(
         VALUES (?, ?, ?, ?)
     """, (guild_id, schedule_id, prayer_type.value, int(success)))
 
-
 def log_voice_join(db: Database, guild_id: str, user_id: str, username: str, channel_id: str) -> None:
     db.execute("""
         INSERT INTO voice_session_logs (guild_id, user_id, username, channel_id, joined_at)
         VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
     """, (guild_id, user_id, username, channel_id))
 
-
 def log_voice_leave(db: Database, guild_id: str, user_id: str, channel_id: str) -> None:
-    # Find the most recent open session for this user in this channel
     row = db.fetchone("""
-        SELECT id, joined_at FROM voice_session_logs 
+        SELECT id, joined_at FROM voice_session_logs
         WHERE guild_id=? AND user_id=? AND channel_id=? AND left_at IS NULL
         ORDER BY joined_at DESC LIMIT 1
     """, (guild_id, user_id, channel_id))
-    
+
     if row:
         db.execute("""
-            UPDATE voice_session_logs 
+            UPDATE voice_session_logs
             SET left_at = CURRENT_TIMESTAMP,
                 duration_seconds = CAST((JulianDay(CURRENT_TIMESTAMP) - JulianDay(joined_at)) * 86400 AS INTEGER)
             WHERE id = ?
         """, (row["id"],))
 
-
 def cleanup_old_logs(db: Database) -> None:
-    """Delete logs older than 30 days."""
     db.execute("DELETE FROM prayer_logs WHERE played_at < date('now', '-30 days')")
     db.execute("DELETE FROM voice_session_logs WHERE joined_at < date('now', '-30 days')")
 
-
 def get_audio_filename(prayer_type: PrayerType) -> str:
     return PRAYER_AUDIO_MAP[prayer_type]
-
-
-# ------------------------------------------------------------------
-# Guild config helpers — delegated to db/guilds.py (discord-radio pattern)
-# ------------------------------------------------------------------
 
 from db.guilds import get_guild_config, apply_guild_config, get_guild_configs, get_guild_channels, discover_guild, replace_guild_channels  # noqa: F401, E402

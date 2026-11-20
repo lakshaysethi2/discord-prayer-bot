@@ -1,4 +1,3 @@
-"""VC status updates and slash commands for PrayerBot."""
 from __future__ import annotations
 
 import asyncio
@@ -11,7 +10,6 @@ from db.models import PrayerType
 from db.prayers import get_audio_filename, get_guild_config
 
 log = logging.getLogger(__name__)
-
 
 class PrayerBotStatusMixin:
     def _log_permissions(self, guild: discord.Guild, voice_channel_id: str | None) -> None:
@@ -43,79 +41,62 @@ class PrayerBotStatusMixin:
         )
 
     async def _update_all_voice_statuses(self) -> None:
-        log.info("Updating voice statuses for %d guilds", len(self.guilds))
-        all_next_prayer_minutes = []
-        for guild in self.guilds:
-            guild_id = str(guild.id)
-            temp_vc = None
-            try:
-                cfg = get_guild_config(self.db, guild_id)
-                if not cfg or not cfg.enabled or not cfg.voice_channel_id:
-                    continue
-                self._log_permissions(guild, cfg.voice_channel_id)
-                voice_channel = guild.get_channel(int(cfg.voice_channel_id))
-                if voice_channel is None:
-                    try:
-                        voice_channel = await guild.fetch_channel(int(cfg.voice_channel_id))
-                    except Exception:
-                        continue
-                if not isinstance(voice_channel, (discord.VoiceChannel, discord.StageChannel)):
-                    continue
-                player = self.players.get(guild_id)
-                is_playing = player and player.is_playing() and not (guild_id in self._tts_playing)
-                minutes_left = self._get_next_prayer_minutes(guild_id)
-                if minutes_left is not None:
-                    all_next_prayer_minutes.append(minutes_left)
-                if is_playing:
-                    status = "Now praying"
-                elif minutes_left is None:
-                    status = "No prayers scheduled"
-                elif minutes_left <= 0:
-                    status = "Prayer starting soon"
-                else:
-                    days, remainder = divmod(minutes_left, 1440)
-                    hours, mins = divmod(remainder, 60)
-                    if days > 0:
-                        status = f"Next prayer starts in ~{days}d {hours}h"
-                    elif hours > 0:
-                        status = f"Next prayer starts in ~{hours}h {mins}m"
-                    else:
-                        status = f"Next prayer starts in ~{mins}m"
-                vc_conn = self.voice_connections.get(guild_id) or guild.voice_client
-                if vc_conn and vc_conn.is_connected() and vc_conn.channel and str(vc_conn.channel.id) == str(voice_channel.id):
-                    try:
-                        await asyncio.sleep(1)
-                        await voice_channel.edit(status=status)
-                        log.info("Set official VC status for guild %s: %s", guild_id, status)
-                    except Exception as exc:
-                        log.debug("Official VC status update failed: %s", exc)
-                elif not vc_conn or not vc_conn.is_connected():
-                    is_connected = (guild.voice_client and guild.voice_client.is_connected()) or (vc_conn and vc_conn.is_connected())
-                    if cfg.status_blip_enabled and not is_connected:
-                        try:
-                            temp_vc = await voice_channel.connect(timeout=10.0, reconnect=False)
-                            await asyncio.sleep(2)
-                            await voice_channel.edit(status=status)
-                            log.info("Set official VC status via blip for guild %s: %s", guild_id, status)
-                            await asyncio.sleep(2)
-                        except Exception as exc:
-                            log.debug("Temporary join/status blip failed in guild %s: %s", guild_id, exc)
-                    else:
-                        log.debug("Skipping status blip for guild %s (feature disabled or bot connected)", guild_id)
-            except Exception as exc:
-                log.warning("Unexpected error updating status for guild %s: %s", guild_id, exc)
-            finally:
-                if temp_vc:
-                    player = self.players.get(guild_id)
-                    if not player or not player.is_playing():
-                        await temp_vc.disconnect()
-                        log.debug("Temporary status VC disconnected for guild %s", guild_id)
-        if all_next_prayer_minutes:
-            earliest_mins = min(all_next_prayer_minutes)
-            h, m = divmod(earliest_mins, 60)
-            activity_text = f"Next prayer starts in ~{h}h {m}m" if h > 0 else f"Next prayer starts in ~{m}m"
-            await self.change_presence(activity=discord.Game(name=activity_text))
-            log.info("Updated bot global activity: %s", activity_text)
+        minutes = await asyncio.gather(
+            *(self._status_for_guild(guild) for guild in self.guilds)
+        )
+        upcoming = [m for m in minutes if m is not None]
+        if not upcoming:
+            return
+        h, m = divmod(min(upcoming), 60)
+        text = f"Next prayer starts in ~{h}h {m}m" if h > 0 else f"Next prayer starts in ~{m}m"
+        await self.change_presence(activity=discord.Game(name=text))
+
+    def _refresh_statuses_soon(self) -> None:
+        task = getattr(self, "_status_refresh_task", None)
+        if task is None or task.done():
+            self._status_refresh_task = asyncio.create_task(self._update_all_voice_statuses())
+
+    async def _status_for_guild(self, guild: discord.Guild) -> int | None:
+        guild_id = str(guild.id)
+        cfg = get_guild_config(self.db, guild_id)
+        if not cfg or not cfg.enabled or not cfg.voice_channel_id:
+            return None
+        channel = guild.get_channel(int(cfg.voice_channel_id))
+        if not isinstance(channel, (discord.VoiceChannel, discord.StageChannel)):
+            return None
+        player = self.players.get(guild_id)
+        playing = bool(player and player.is_playing() and guild_id not in self._tts_playing)
+        minutes_left = self._get_next_prayer_minutes(guild_id)
+        status = self._status_text(playing, minutes_left)
+        connected = self.voice_connections.get(guild_id) or guild.voice_client
+        try:
+            if connected and connected.is_connected():
+                await channel.edit(status=status)
+            elif cfg.status_blip_enabled:
+                blip = await channel.connect(timeout=10.0, reconnect=False)
+                try:
+                    await channel.edit(status=status)
+                finally:
+                    await blip.disconnect()
+        except Exception as exc:
+            log.debug("Status update failed for guild %s: %s", guild_id, exc)
+        return minutes_left
+
+    @staticmethod
+    def _status_text(playing: bool, minutes_left: int | None) -> str:
+        if playing:
+            return "Now praying"
+        if minutes_left is None:
+            return "No prayers scheduled"
+        if minutes_left <= 0:
+            return "Prayer starting soon"
+        days, remainder = divmod(minutes_left, 1440)
+        hours, mins = divmod(remainder, 60)
+        if days > 0:
+            return f"Next prayer starts in ~{days}d {hours}h"
+        if hours > 0:
+            return f"Next prayer starts in ~{hours}h {mins}m"
+        return f"Next prayer starts in ~{mins}m"
 
     def _setup_slash_commands(self) -> None:
         @self.tree.command(name="start", description="Play a prayer adhoc")

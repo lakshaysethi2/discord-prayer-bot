@@ -1,7 +1,5 @@
-"""Guard the v2 wiring: the mixin must actually be attached to PrayerBot."""
 
 from __future__ import annotations
-
 
 def test_v2_methods_are_on_prayer_bot(monkeypatch):
     monkeypatch.setenv("DISCORD_TOKEN", "x")
@@ -29,9 +27,7 @@ def test_v2_methods_are_on_prayer_bot(monkeypatch):
             "DailyDrawV2Mixin"
         ), f"{name} is not the v2 implementation"
 
-
 def test_prayer_play_hooks_still_installed(monkeypatch):
-    """PR #21 hooks must survive removal of the draw installer."""
     monkeypatch.setenv("DISCORD_TOKEN", "x")
     monkeypatch.setenv("DISCORD_BOT_TOKEN", "x")
     monkeypatch.setenv("ADMIN_TOKEN", "x")
@@ -46,7 +42,6 @@ def test_prayer_play_hooks_still_installed(monkeypatch):
     ) or bot.main.PrayerBot._start_prayer_playback.__module__.endswith(
         "prayer_play_hooks"
     )
-
 
 def test_import_time_draw_hook_is_gone():
     import bot.daily_draw_runtime as runtime

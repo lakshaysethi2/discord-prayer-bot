@@ -1,155 +1,140 @@
 {% extends "base.html" %}
 {% block title %}Servers · Prayer Bot{% endblock %}
-
 {% block content %}
 <h1 class="text-xl font-semibold mb-1">Server Management</h1>
 <p class="text-slate-400 text-sm mb-4">
-  Select voice/text channels, the daily ticket-draw channel, and enable the bot for each server. Changes apply live — no restart needed.
+Select voice/text channels, the daily ticket-draw channel, and enable the bot for each server. Changes apply live — no restart needed.
 </p>
-
 {% if flash %}
-  <div class="mb-4 rounded bg-emerald-900/40 border border-emerald-700 px-3 py-2 text-sm text-emerald-200">{{ flash }}</div>
+<div class="mb-4 rounded bg-emerald-900/40 border border-emerald-700 px-3 py-2 text-sm text-emerald-200">{{ flash }}</div>
 {% endif %}
-
 {% if not servers %}
-  <div class="rounded bg-slate-900 border border-slate-800 px-4 py-8 text-center text-slate-400">
-    No servers discovered yet. Invite the bot to a Discord server to see it here.
-  </div>
-{% endif %}
-
-<div class="space-y-4">
-  {% for s in servers %}
-    <form method="post" action="/servers/update" class="rounded-lg bg-slate-900 border border-slate-800 p-4">
-      <input type="hidden" name="guild_id" value="{{ s.guild_id }}">
-
-      <div class="flex items-center justify-between mb-3">
-        <div>
-          <div class="font-semibold">{{ s.guild_name }}</div>
-          <div class="text-xs text-slate-500">id {{ s.guild_id }}</div>
-        </div>
-        <div class="flex items-center gap-3">
-          <label class="flex items-center gap-2 text-sm cursor-pointer select-none">
-            <input type="checkbox" name="enabled" value="on" {{ "checked" if s.enabled else "" }}
-                   class="h-4 w-4 rounded border-slate-600 bg-slate-800">
-            <span>Enabled</span>
-          </label>
-        </div>
-      </div>
-
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <label class="text-sm">
-          <span class="block text-slate-400 mb-1">Voice channel</span>
-          <select name="voice_channel_id"
-                  class="w-full rounded bg-slate-800 border border-slate-700 px-2 py-1.5 text-slate-100">
-            <option value="">— none —</option>
-            {% for vc in s.voice_channels %}
-              <option value="{{ vc.channel_id }}" {{ "selected" if s.voice_channel_id == vc.channel_id else "" }}>
-                {{ vc.channel_name }}
-              </option>
-            {% endfor %}
-          </select>
-        </label>
-
-        <label class="text-sm">
-          <span class="block text-slate-400 mb-1">Text channel (notifications)</span>
-          <select name="text_channel_id"
-                  class="w-full rounded bg-slate-800 border border-slate-700 px-2 py-1.5 text-slate-100">
-            <option value="">— none —</option>
-            {% for tc in s.text_channels %}
-              <option value="{{ tc.channel_id }}" {{ "selected" if s.text_channel_id == tc.channel_id else "" }}>
-                {{ tc.channel_name }}
-              </option>
-            {% endfor %}
-          </select>
-        </label>
-
-        <label class="text-sm">
-          <span class="block text-slate-400 mb-1">Bot Voice (TTS)</span>
-          <select name="tts_voice"
-                  class="w-full rounded bg-slate-800 border border-slate-700 px-2 py-1.5 text-slate-100">
-            <option value="en-US-GuyNeural" {{ "selected" if s.tts_voice == "en-US-GuyNeural" else "" }}>Male (Guy)</option>
-            <option value="en-US-AriaNeural" {{ "selected" if s.tts_voice == "en-US-AriaNeural" else "" }}>Female (Aria)</option>
-            <option value="en-GB-SoniaNeural" {{ "selected" if s.tts_voice == "en-GB-SoniaNeural" else "" }}>British (Sonia)</option>
-          </select>
-        </label>
-
-        <label class="text-sm">
-          <span class="block text-slate-400 mb-1">Logging channel</span>
-          <select name="logging_channel_id"
-                  class="w-full rounded bg-slate-800 border border-slate-700 px-2 py-1.5 text-slate-100">
-            <option value="">— none —</option>
-            {% for tc in s.text_channels %}
-              <option value="{{ tc.channel_id }}" {{ "selected" if s.logging_channel_id == tc.channel_id else "" }}>
-                {{ tc.channel_name }}
-              </option>
-            {% endfor %}
-          </select>
-        </label>
-
-        <label class="text-sm">
-          <span class="block text-slate-400 mb-1">Daily draw channel</span>
-          <select name="draw_channel_id"
-                  class="w-full rounded bg-slate-800 border border-slate-700 px-2 py-1.5 text-slate-100">
-            <option value="">— none —</option>
-            {% for tc in s.draw_text_channels %}
-              <option value="{{ tc.channel_id }}" {{ "selected" if s.draw_channel_id == tc.channel_id else "" }}>
-                {{ tc.channel_name }}
-              </option>
-            {% endfor %}
-          </select>
-        </label>
-
-        <label class="text-sm">
-          <span class="block text-slate-400 mb-1">Pre-join (minutes)</span>
-          <input type="number" name="pre_join_minutes" value="{{ s.pre_join_minutes }}" min="0" max="60"
-                 class="w-full rounded bg-slate-800 border border-slate-700 px-2 py-1.5 text-slate-100">
-        </label>
-
-        <label class="text-sm">
-          <span class="block text-slate-400 mb-1">Post-stay (minutes)</span>
-          <input type="number" name="post_stay_minutes" value="{{ s.post_stay_minutes }}" min="0" max="60"
-                 class="w-full rounded bg-slate-800 border border-slate-700 px-2 py-1.5 text-slate-100">
-        </label>
-
-        <label class="flex items-center gap-2 text-sm cursor-pointer select-none mt-4">
-          <input type="checkbox" name="status_blip_enabled" value="on" {{ "checked" if s.status_blip_enabled else "" }}
-                 class="h-4 w-4 rounded border-slate-600 bg-slate-800">
-          <span class="text-slate-300">Enable Voice Status Blip (Updates countdown every minute)</span>
-        </label>
-      </div>
-
-      <div class="mt-3 flex items-center justify-between">
-        <div class="flex gap-2 text-xs">
-          <a href="/prayers/{{ s.guild_id }}" class="text-indigo-400 hover:text-indigo-300">📅 Schedule</a>
-          <a href="/history/{{ s.guild_id }}" class="text-slate-400 hover:text-slate-300">📜 History</a>
-          <a href="/prayers/public/{{ s.guild_id }}" class="text-slate-400 hover:text-slate-300">👁 Public</a>
-        </div>
-        <button type="submit"
-                class="rounded bg-indigo-600 hover:bg-indigo-500 px-3 py-1.5 text-sm font-medium">
-          Save
-        </button>
-      </div>
-    </form>
-  {% endfor %}
+<div class="rounded bg-slate-900 border border-slate-800 px-4 py-8 text-center text-slate-400">
+No servers discovered yet. Invite the bot to a Discord server to see it here.
 </div>
-
+{% endif %}
+<div class="space-y-4">
+{% for s in servers %}
+<form method="post" action="/servers/update" class="rounded-lg bg-slate-900 border border-slate-800 p-4">
+<input type="hidden" name="guild_id" value="{{ s.guild_id }}">
+<div class="flex items-center justify-between mb-3">
+<div>
+<div class="font-semibold">{{ s.guild_name }}</div>
+<div class="text-xs text-slate-500">id {{ s.guild_id }}</div>
+</div>
+<div class="flex items-center gap-3">
+<label class="flex items-center gap-2 text-sm cursor-pointer select-none">
+<input type="checkbox" name="enabled" value="on" {{ "checked" if s.enabled else "" }}
+class="h-4 w-4 rounded border-slate-600 bg-slate-800">
+<span>Enabled</span>
+</label>
+</div>
+</div>
+<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+<label class="text-sm">
+<span class="block text-slate-400 mb-1">Voice channel</span>
+<select name="voice_channel_id"
+class="w-full rounded bg-slate-800 border border-slate-700 px-2 py-1.5 text-slate-100">
+<option value="">— none —</option>
+{% for vc in s.voice_channels %}
+<option value="{{ vc.channel_id }}" {{ "selected" if s.voice_channel_id == vc.channel_id else "" }}>
+{{ vc.channel_name }}
+</option>
+{% endfor %}
+</select>
+</label>
+<label class="text-sm">
+<span class="block text-slate-400 mb-1">Text channel (notifications)</span>
+<select name="text_channel_id"
+class="w-full rounded bg-slate-800 border border-slate-700 px-2 py-1.5 text-slate-100">
+<option value="">— none —</option>
+{% for tc in s.text_channels %}
+<option value="{{ tc.channel_id }}" {{ "selected" if s.text_channel_id == tc.channel_id else "" }}>
+{{ tc.channel_name }}
+</option>
+{% endfor %}
+</select>
+</label>
+<label class="text-sm">
+<span class="block text-slate-400 mb-1">Bot Voice (TTS)</span>
+<select name="tts_voice"
+class="w-full rounded bg-slate-800 border border-slate-700 px-2 py-1.5 text-slate-100">
+<option value="en-US-GuyNeural" {{ "selected" if s.tts_voice == "en-US-GuyNeural" else "" }}>Male (Guy)</option>
+<option value="en-US-AriaNeural" {{ "selected" if s.tts_voice == "en-US-AriaNeural" else "" }}>Female (Aria)</option>
+<option value="en-GB-SoniaNeural" {{ "selected" if s.tts_voice == "en-GB-SoniaNeural" else "" }}>British (Sonia)</option>
+</select>
+</label>
+<label class="text-sm">
+<span class="block text-slate-400 mb-1">Logging channel</span>
+<select name="logging_channel_id"
+class="w-full rounded bg-slate-800 border border-slate-700 px-2 py-1.5 text-slate-100">
+<option value="">— none —</option>
+{% for tc in s.text_channels %}
+<option value="{{ tc.channel_id }}" {{ "selected" if s.logging_channel_id == tc.channel_id else "" }}>
+{{ tc.channel_name }}
+</option>
+{% endfor %}
+</select>
+</label>
+<label class="text-sm">
+<span class="block text-slate-400 mb-1">Daily draw channel</span>
+<select name="draw_channel_id"
+class="w-full rounded bg-slate-800 border border-slate-700 px-2 py-1.5 text-slate-100">
+<option value="">— none —</option>
+{% for tc in s.draw_text_channels %}
+<option value="{{ tc.channel_id }}" {{ "selected" if s.draw_channel_id == tc.channel_id else "" }}>
+{{ tc.channel_name }}
+</option>
+{% endfor %}
+</select>
+</label>
+<label class="text-sm">
+<span class="block text-slate-400 mb-1">Pre-join (minutes)</span>
+<input type="number" name="pre_join_minutes" value="{{ s.pre_join_minutes }}" min="0" max="60"
+class="w-full rounded bg-slate-800 border border-slate-700 px-2 py-1.5 text-slate-100">
+</label>
+<label class="text-sm">
+<span class="block text-slate-400 mb-1">Post-stay (minutes)</span>
+<input type="number" name="post_stay_minutes" value="{{ s.post_stay_minutes }}" min="0" max="60"
+class="w-full rounded bg-slate-800 border border-slate-700 px-2 py-1.5 text-slate-100">
+</label>
+<label class="flex items-center gap-2 text-sm cursor-pointer select-none mt-4">
+<input type="checkbox" name="status_blip_enabled" value="on" {{ "checked" if s.status_blip_enabled else "" }}
+class="h-4 w-4 rounded border-slate-600 bg-slate-800">
+<span class="text-slate-300">Enable Voice Status Blip (Updates countdown every minute)</span>
+</label>
+</div>
+<div class="mt-3 flex items-center justify-between">
+<div class="flex gap-2 text-xs">
+<a href="/prayers/{{ s.guild_id }}" class="text-indigo-400 hover:text-indigo-300">📅 Schedule</a>
+<a href="/history/{{ s.guild_id }}" class="text-slate-400 hover:text-slate-300">📜 History</a>
+<a href="/prayers/public/{{ s.guild_id }}" class="text-slate-400 hover:text-slate-300">👁 Public</a>
+</div>
+<button type="submit"
+class="rounded bg-indigo-600 hover:bg-indigo-500 px-3 py-1.5 text-sm font-medium">
+Save
+</button>
+</div>
+</form>
+{% endfor %}
+</div>
 <script>
 async function sendControl(guildId, action) {
-  const fb = document.getElementById('control-feedback');
-  try {
-    const r = await fetch('/controls', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-      body: new URLSearchParams({guild_id: guildId, action: action})
-    });
-    fb.textContent = action + ' sent to ' + guildId;
-    fb.classList.remove('hidden');
-    setTimeout(() => fb.classList.add('hidden'), 2000);
-  } catch(e) {
-    fb.textContent = 'Error: ' + e;
-    fb.classList.remove('hidden');
-    fb.classList.add('text-red-400');
-  }
+const fb = document.getElementById('control-feedback');
+try {
+const r = await fetch('/controls', {
+method: 'POST',
+headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+body: new URLSearchParams({guild_id: guildId, action: action})
+});
+fb.textContent = action + ' sent to ' + guildId;
+fb.classList.remove('hidden');
+setTimeout(() => fb.classList.add('hidden'), 2000);
+} catch(e) {
+fb.textContent = 'Error: ' + e;
+fb.classList.remove('hidden');
+fb.classList.add('text-red-400');
+}
 }
 </script>
 {% endblock %}

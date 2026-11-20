@@ -1,4 +1,3 @@
-"""Discord wiring for issue #9. Installed from prayer_play_hooks."""
 
 from __future__ import annotations
 
@@ -36,7 +35,6 @@ _SLASH_ORIG = None
 _READY_ORIG = None
 _FINISH_FACTORY_ORIG = None
 
-
 def _session_open(self, guild_id: str) -> bool:
     checker = getattr(self, "_is_prayer_playing", None)
     if callable(checker):
@@ -46,10 +44,8 @@ def _session_open(self, guild_id: str) -> bool:
         return False
     return bool(player.is_playing()) and guild_id not in getattr(self, "_tts_playing", set())
 
-
 def _tts(self, guild_id: str) -> bool:
     return guild_id in getattr(self, "_tts_playing", set())
-
 
 def _bot_in_prayer_vc(self, guild_id: str, prayer_vc_id: str | None) -> bool:
     if not prayer_vc_id:
@@ -59,14 +55,12 @@ def _bot_in_prayer_vc(self, guild_id: str, prayer_vc_id: str | None) -> bool:
         return False
     return str(vc.channel.id) == str(prayer_vc_id)
 
-
 def _member_meta(member) -> tuple[str, str, str | None]:
     username = getattr(member, "name", None) or str(member.id)
     nick = getattr(member, "nick", None) or getattr(member, "display_name", None)
     if nick == username:
         nick = None
     return str(member.id), username, nick
-
 
 def _open_present_humans(self, guild_id: str) -> None:
     cfg = get_guild_config(self.db, guild_id)
@@ -87,13 +81,11 @@ def _open_present_humans(self, guild_id: str) -> None:
         uid, name, nick = _member_meta(member)
         open_session(self.db, guild_id, uid, name, nick)
 
-
 async def _start_prayer_playback(self, guild_id: str, prayer_type, filename: str, is_adhoc: bool = False, **kwargs) -> bool:
     ok = await _START_ORIG(self, guild_id, prayer_type, filename, is_adhoc, **kwargs)
     if ok:
         _open_present_humans(self, guild_id)
     return ok
-
 
 def _make_schedule_disconnect(self, guild_id: str):
     inner = _FINISH_FACTORY_ORIG(self, guild_id)
@@ -103,7 +95,6 @@ def _make_schedule_disconnect(self, guild_id: str):
         await inner(player, track)
 
     return _on_finish
-
 
 async def on_voice_state_update(self, member, before, after) -> None:
     await _VOICE_ORIG(self, member, before, after)
@@ -130,13 +121,11 @@ async def on_voice_state_update(self, member, before, after) -> None:
     elif before_id == prayer_vc:
         close_session(self.db, guild_id, uid)
 
-
 async def on_ready(self) -> None:
     close_orphan_sessions(self.db)
     await _READY_ORIG(self)
     if not getattr(self, "_listen_checkpoint_task", None) or self._listen_checkpoint_task.done():
         self._listen_checkpoint_task = asyncio.create_task(_checkpoint_loop(self))
-
 
 async def _checkpoint_loop(self) -> None:
     await self.wait_until_ready()
@@ -146,7 +135,6 @@ async def _checkpoint_loop(self) -> None:
         except Exception:
             log.exception("prayer-listen checkpoint failed")
         await asyncio.sleep(3600)
-
 
 def _setup_slash_commands(self) -> None:
     _SLASH_ORIG(self)
@@ -186,9 +174,7 @@ def _setup_slash_commands(self) -> None:
         embed.set_footer(text=embed_footer(period, key or week_key()))
         await interaction.followup.send(embed=embed, ephemeral=True)
 
-
 def install(bot_cls):
-    """Wrap listen/leaderboard methods. Safe to call twice on the same class."""
     if getattr(bot_cls, "_listen_hooks_installed", False):
         return bot_cls
     global _START_ORIG, _VOICE_ORIG, _SLASH_ORIG, _READY_ORIG, _FINISH_FACTORY_ORIG

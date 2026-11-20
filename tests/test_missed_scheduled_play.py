@@ -11,7 +11,6 @@ from db.models import PrayerType
 from db.prayers import upsert_schedule
 from bot.prayer_scheduler import PrayerScheduler
 
-
 def test_pre_join_not_latched_on_failure():
     async def run_test():
         with Database(":memory:") as db:
@@ -39,7 +38,6 @@ def test_pre_join_not_latched_on_failure():
 
     asyncio.run(run_test())
 
-
 def test_failed_play_not_latched_and_retries_in_grace():
     async def run_test():
         with Database(":memory:") as db:
@@ -58,13 +56,14 @@ def test_failed_play_not_latched_and_retries_in_grace():
                 mock_dt.now.return_value = now
                 mock_dt.side_effect = lambda *a, **k: datetime(*a, **k)
                 await scheduler._check_and_play()
+                await asyncio.gather(*scheduler._tasks)
                 await scheduler._check_and_play()
+                await asyncio.gather(*scheduler._tasks)
             assert len(plays) == 2
             assert scheduler._played == set()
-            assert any(k.endswith("christian:12:00:00") for k in scheduler._active_prayers)
+            assert scheduler._active_prayers == {}
 
     asyncio.run(run_test())
-
 
 def test_watchdog_replays_when_connected_but_silent():
     with Database(":memory:") as db:

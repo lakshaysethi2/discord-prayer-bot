@@ -1,4 +1,3 @@
-"""Daily draw DB access layer (issue #16) — mirrors `db/prayers.py` style."""
 
 from __future__ import annotations
 
@@ -19,17 +18,11 @@ from bot.daily_draw_logic import (
 )
 from db.database import Database
 
-# Seed-only placeholder (not a real Discord channel). Used when
-# PRAYER_DRAW_CHANNEL_ID is unset on first-ever guild init. Once a
-# daily_draw_config row exists, that row wins; changing env does not
-# override it. Operators move the channel at runtime with
-# /setticketdrawchannel or the dashboard Servers picker.
 DEFAULT_CHANNEL_ID = "0000000000000000000"
 DEFAULT_ROLE_ID = "1481586542911684648"
 DEFAULT_COOLDOWN_HOURS = 18
 DEFAULT_POST_HOUR = 7
 DEFAULT_TIMEZONE = "Europe/Paris"
-
 
 @dataclass(slots=True)
 class DailyDrawConfig:
@@ -42,7 +35,6 @@ class DailyDrawConfig:
     post_hour: int
     timezone_name: str
 
-
 def _env_int(name: str, default: int) -> int:
     raw = os.environ.get(name)
     if raw is None or raw.strip() == "":
@@ -52,11 +44,9 @@ def _env_int(name: str, default: int) -> int:
     except ValueError:
         return default
 
-
 def _env_str(name: str, default: str) -> str:
     raw = os.environ.get(name)
     return raw if raw and raw.strip() else default
-
 
 def _config_from_row(row: object) -> DailyDrawConfig:
     return DailyDrawConfig(
@@ -70,9 +60,7 @@ def _config_from_row(row: object) -> DailyDrawConfig:
         timezone_name=row["timezone_name"],  # type: ignore[index]
     )
 
-
 def get_config(db: Database, guild_id: str) -> DailyDrawConfig | None:
-    """Return stored draw config, or None if this guild has never been seeded."""
     row = db.fetchone(
         """
         SELECT guild_id, channel_id, target_role_id, base_text, emoji_catpray,
@@ -86,15 +74,7 @@ def get_config(db: Database, guild_id: str) -> DailyDrawConfig | None:
         return None
     return _config_from_row(row)
 
-
 def get_or_seed_config(db: Database, guild_id: str) -> DailyDrawConfig:
-    """Return this guild's draw config, seeding from env on first call only.
-
-    Precedence: an existing ``daily_draw_config`` row is the source of truth.
-    ``PRAYER_DRAW_CHANNEL_ID`` / ``DEFAULT_CHANNEL_ID`` (and the other
-    ``PRAYER_DRAW_*`` env vars) are seed-only for first-ever guild init.
-    Changing env after a row exists does not override it.
-    """
     existing = get_config(db, guild_id)
     if existing is not None:
         return existing
@@ -122,31 +102,9 @@ def get_or_seed_config(db: Database, guild_id: str) -> DailyDrawConfig:
     )
     return cfg
 
-
 def set_channel_id(db: Database, guild_id: str, channel_id: str) -> None:
     get_or_seed_config(db, guild_id)
     db.execute("UPDATE daily_draw_config SET channel_id = ? WHERE guild_id = ?", (channel_id, guild_id))
-
-
-def set_role_id(db: Database, guild_id: str, role_id: str) -> None:
-    get_or_seed_config(db, guild_id)
-    db.execute("UPDATE daily_draw_config SET target_role_id = ? WHERE guild_id = ?", (role_id, guild_id))
-
-
-def set_cooldown_hours(db: Database, guild_id: str, cooldown_hours: int) -> None:
-    get_or_seed_config(db, guild_id)
-    db.execute("UPDATE daily_draw_config SET cooldown_hours = ? WHERE guild_id = ?", (int(cooldown_hours), guild_id))
-
-
-def get_active_message(db: Database, guild_id: str) -> tuple[str | None, str | None, int]:
-    row = db.fetchone(
-        "SELECT active_message_id, active_post_local_date, heart_count FROM daily_draw_state WHERE guild_id = ?",
-        (guild_id,),
-    )
-    if row is None:
-        return (None, None, 0)
-    return (row["active_message_id"], row["active_post_local_date"], int(row["heart_count"]))
-
 
 def update_hearts(db: Database, guild_id: str, new_count: int) -> None:
     db.execute(
@@ -158,12 +116,10 @@ def update_hearts(db: Database, guild_id: str, new_count: int) -> None:
         (guild_id, int(new_count)),
     )
 
-
 def _as_iso_date(value) -> str:
     if isinstance(value, date):
         return value.isoformat()
     return str(value)
-
 
 def get_active(db: Database, guild_id: str) -> tuple[str | None, date | None, int | None, int]:
     row = db.fetchone(
@@ -187,7 +143,6 @@ def get_active(db: Database, guild_id: str) -> tuple[str | None, date | None, in
     slot = None if slot_raw is None else int(slot_raw)
     return (row["active_message_id"], cycle, slot, int(row["heart_count"]))
 
-
 def start_new_draw_day(db: Database, guild_id: str, message_id: str, cycle_date, slot_index: int) -> None:
     cycle = _as_iso_date(cycle_date)
     db.execute(
@@ -204,14 +159,7 @@ def start_new_draw_day(db: Database, guild_id: str, message_id: str, cycle_date,
         (guild_id, message_id, cycle, int(slot_index)),
     )
 
-
 def repost_slot(db: Database, guild_id: str, message_id: str, slot_index: int) -> None:
-    """Point the live slot at a new message id. UPDATE-only.
-
-    Safe only while no code path DELETEs daily_draw_state rows. An INSERT
-    here would create a row with NULL active_cycle_date. If this UPDATE
-    matches zero rows, the caller has a state desync — log and investigate.
-    """
     db.execute(
         """
         UPDATE daily_draw_state
@@ -220,7 +168,6 @@ def repost_slot(db: Database, guild_id: str, message_id: str, slot_index: int) -
         """,
         (message_id, int(slot_index), guild_id),
     )
-
 
 def set_archive_pending(db: Database, guild_id: str, message_id: str) -> None:
     db.execute(
@@ -234,10 +181,8 @@ def set_archive_pending(db: Database, guild_id: str, message_id: str) -> None:
         (guild_id, message_id),
     )
 
-
 def mark_archive_done(db: Database, guild_id: str) -> None:
     db.execute("UPDATE daily_draw_state SET archive_button_removed = 1 WHERE guild_id = ?", (guild_id,))
-
 
 def get_archive(db: Database, guild_id: str) -> tuple[str | None, bool]:
     row = db.fetchone(
@@ -250,27 +195,10 @@ def get_archive(db: Database, guild_id: str) -> tuple[str | None, bool]:
     removed = bool(flag) if flag is not None else False
     return (row["archive_message_id"], removed)
 
-
-def start_new_day(db: Database, guild_id: str, message_id: str, post_date: str) -> None:
-    db.execute(
-        """
-        INSERT INTO daily_draw_state
-            (guild_id, active_message_id, active_post_local_date, heart_count)
-        VALUES (?, ?, ?, 0)
-        ON CONFLICT(guild_id) DO UPDATE SET
-            active_message_id = excluded.active_message_id,
-            active_post_local_date = excluded.active_post_local_date,
-            heart_count = 0
-        """,
-        (guild_id, message_id, post_date),
-    )
-
-
 def _to_naive_utc(utc_dt: datetime) -> datetime:
     if utc_dt.tzinfo is not None:
         return utc_dt.astimezone(pytz.UTC).replace(tzinfo=None)
     return utc_dt
-
 
 def last_draw_at(db: Database, guild_id: str, user_id: str) -> datetime | None:
     row = db.fetchone(
@@ -284,7 +212,6 @@ def last_draw_at(db: Database, guild_id: str, user_id: str) -> datetime | None:
     except ValueError:
         return None
 
-
 def set_last_draw(db: Database, guild_id: str, user_id: str, utc_dt: datetime) -> None:
     db.execute(
         """
@@ -294,7 +221,6 @@ def set_last_draw(db: Database, guild_id: str, user_id: str, utc_dt: datetime) -
         """,
         (guild_id, user_id, _to_naive_utc(utc_dt).isoformat()),
     )
-
 
 def list_configured_guilds(db: Database) -> list[DailyDrawConfig]:
     rows = db.fetchall(
@@ -313,7 +239,6 @@ def list_configured_guilds(db: Database) -> list[DailyDrawConfig]:
         )
         for row in rows
     ]
-
 
 def repoint_active_message(db: Database, guild_id: str, message_id: str) -> None:
     db.execute(

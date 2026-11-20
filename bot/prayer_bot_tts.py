@@ -1,4 +1,3 @@
-"""TTS queue, disconnect timers, and audio source factory for PrayerBot."""
 from __future__ import annotations
 
 import asyncio
@@ -19,20 +18,9 @@ from db.prayers import get_guild_config
 
 log = logging.getLogger(__name__)
 TTS_DIR = Path("data/tts")
-# edge-tts writes 24 kHz mono MP3 at ~6 kB/s, so anything under this is a stub.
-# Kept low on purpose: a short real phrase must never be thrown away.
 MIN_TTS_BYTES = 2048
 
-
 def _tts_cache_valid(path: Path) -> bool:
-    """True when FFmpeg can open `path` and read audio out of it.
-
-    Files written by a killed process or a full disk can have a plausible size
-    but no decodable audio; FFmpeg exits non-zero on those, and they never play.
-    This is a cheap prefix check, not a checksum: truncation further into the
-    file is not detectable without a full decode, so new audio is validated in
-    `.part` form before it is renamed into the cache instead.
-    """
     try:
         if path.stat().st_size < MIN_TTS_BYTES:
             return False
@@ -45,13 +33,8 @@ def _tts_cache_valid(path: Path) -> bool:
             timeout=15,
         )
     except (OSError, subprocess.SubprocessError):
-        # FFmpeg itself is missing or wedged. We cannot judge the file, so keep
-        # it: deleting a good cache entry here would mute every announcement and
-        # re-synthesise it on each message.
         return True
-    # `-v error` still prints decode errors for files that "open" but are broken.
     return probe.returncode == 0 and not probe.stderr.strip()
-
 
 class PrayerBotTtsMixin:
     async def _disconnect_voice_after_delay(self, guild_id: str, delay_seconds: int = 300) -> None:
@@ -92,7 +75,7 @@ class PrayerBotTtsMixin:
             scheduler = self.schedulers.get(guild_id)
             if scheduler:
                 scheduler.clear_active()
-            asyncio.create_task(self._update_all_voice_statuses())
+            self._refresh_statuses_soon()
         return _on_finish
 
     def _is_voice_connected(self, guild_id: str) -> bool:
@@ -130,8 +113,8 @@ class PrayerBotTtsMixin:
         if callable(checker):
             try:
                 return bool(checker(guild_id))
-            except Exception:
-                pass
+            except Exception as exc:
+                log.warning("prayer-active check failed for guild %s: %s", guild_id, exc)
         player = self.players.get(guild_id)
         return bool(player and player.is_playing() and guild_id not in getattr(self, "_tts_playing", set()))
 
@@ -150,8 +133,6 @@ class PrayerBotTtsMixin:
                 log.warning("Discarding unreadable TTS cache file %s", filepath)
                 filepath.unlink(missing_ok=True)
             TTS_DIR.mkdir(parents=True, exist_ok=True)
-            # Unique per writer: two guilds can synthesise the same text at the
-            # same moment and would otherwise overwrite each other's `.part`.
             tag = f"{os.getpid()}-{uuid.uuid4().hex[:8]}"
             tmp_path = filepath.with_name(f"{filepath.name}.{tag}.part")
             try:
@@ -207,7 +188,7 @@ class PrayerBotTtsMixin:
         vc = await self._ensure_voice_connected(guild_id)
         if vc:
             await self._log_to_channel(guild_id, f"Joined voice channel <#{vc.channel.id}> before prayer.")
-            asyncio.create_task(self._update_all_voice_statuses())
+            self._refresh_statuses_soon()
 
     def _source_factory(self, path: str, seek_seconds: float, volume_percent: int):
         before, options = build_audio_options(seek_seconds, volume_percent)

@@ -1,22 +1,44 @@
-"""Behaviour tests for the prayer session opener (issue #53)."""
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 from bot.prayer_play_hooks import _is_prayer_playing_impl
-from bot.prayer_session import INTER_SECTION_PAUSE_SECONDS, session_plan
+from bot.prayer_session import session_plan
 from bot.prayer_scheduler import WATCHDOG_MAX_WINDOW_SECONDS
 from db.database import Database
 from db.models import PrayerType, PRAYER_AUDIO_MAP
 
+async def _drain(bot):
+    for task in list(bot._session_tasks.values()):
+        with contextlib.suppress(Exception):
+            task.cancel()
+            await asyncio.sleep(0)
+
+class FakeSession:
+
+    def __init__(self, users=(42,)):
+        self.status = "active"
+        self.epoch = 1
+        self.users = set(users)
+
+    def get_user_ids(self):
+        return set(self.users)
+
+class FakeConnection:
+    can_encrypt = True
+
+    def __init__(self):
+        self.dave_session = FakeSession()
 
 class FakeVC:
     def __init__(self):
         self._playing = False
         self._connected = True
-        self.channel = SimpleNamespace(id="111")
+        self.channel = SimpleNamespace(id="111", members=[SimpleNamespace(id=42, bot=False)])
+        self._connection = FakeConnection()
 
     def is_playing(self):
         return self._playing
@@ -29,7 +51,6 @@ class FakeVC:
 
     async def disconnect(self):
         self._connected = False
-
 
 class FakePlayer:
     def __init__(self, vc):
@@ -62,7 +83,6 @@ class FakePlayer:
 
     async def set_volume(self, v):
         return v
-
 
 def make_bot():
     from bot.prayer_bot_playback import PrayerBotPlaybackMixin
@@ -130,14 +150,12 @@ def make_bot():
     bot._is_prayer_playing = _is_prayer_playing_impl.__get__(bot, FakeBot)  # type: ignore
     return bot
 
-
 def _prep(bot, guild_id="g1"):
     vc = FakeVC()
     bot.voice_connections[guild_id] = vc
     player = FakePlayer(vc)
     bot.players[guild_id] = player
     return player
-
 
 def test_session_plays_opener_then_recitation():
     async def run():
@@ -151,14 +169,12 @@ def test_session_plays_opener_then_recitation():
             assert ok is True
             assert len(player.starts) == 1
             assert player.starts[0].local_path.endswith("The three daily prayers - DND community.mp3")
-            # finish opener -> runner should start recitation
             cb = player._on_finish
             player._playing = False
             await cb(player, player.current_track)
             await asyncio.sleep(0.2)
             assert len(player.starts) == 2
             assert player.starts[1].local_path.endswith("Christian prayers - DND community.mp3")
-            # finish recitation -> epilogue once
             cb2 = player._on_finish
             assert cb is cb2  # armed once
             player._playing = False
@@ -168,7 +184,6 @@ def test_session_plays_opener_then_recitation():
         finally:
             pb.INTER_SECTION_PAUSE_SECONDS = orig
     asyncio.run(run())
-
 
 def test_epilogue_runs_once_after_last_track():
     async def run():
@@ -180,18 +195,15 @@ def test_epilogue_runs_once_after_last_track():
             player = _prep(bot)
             await bot._start_prayer_playback("g1", PrayerType.JEWISH, PRAYER_AUDIO_MAP[PrayerType.JEWISH])
             assert len(bot.epilogue_calls) == 0
-            # opener finish must NOT trigger epilogue
             player._playing = False
             await player._on_finish(player, player.current_track)
             await asyncio.sleep(0.2)
             assert len(bot.epilogue_calls) == 0
             assert len(player.starts) == 2
-            # recitation finish triggers epilogue exactly once
             player._playing = False
             await player._on_finish(player, player.current_track)
             await asyncio.sleep(0.2)
             assert len(bot.epilogue_calls) == 1
-            # duplicate finish must not double-epilogue
             await player._on_finish(player, player.current_track)
             await asyncio.sleep(0.1)
             assert len(bot.epilogue_calls) == 1
@@ -199,14 +211,12 @@ def test_epilogue_runs_once_after_last_track():
             pb.INTER_SECTION_PAUSE_SECONDS = pb_orig
     asyncio.run(run())
 
-
 def test_finish_handler_armed_once_per_session():
     async def run():
         bot = make_bot()
         player = _prep(bot)
         await bot._start_prayer_playback("g1", PrayerType.SUFI, PRAYER_AUDIO_MAP[PrayerType.SUFI])
         assert player.finish_arms == 1
-        # runner must not re-arm between tracks
         import bot.prayer_bot_playback as pb
         pb_orig = pb.INTER_SECTION_PAUSE_SECONDS
         pb.INTER_SECTION_PAUSE_SECONDS = 0.01
@@ -225,7 +235,6 @@ def test_finish_handler_armed_once_per_session():
                 pass
     asyncio.run(run())
 
-
 def test_is_prayer_playing_true_during_gap():
     async def run():
         import bot.prayer_bot_playback as pb
@@ -242,15 +251,11 @@ def test_is_prayer_playing_true_during_gap():
             assert player.is_playing() is False
             assert bot._is_prayer_playing("g1") is True
             bot._cancel_session("g1")
-            for t in list(bot._session_tasks.values()):
-                with __import__("contextlib").suppress(Exception):
-                    t.cancel()
-            await asyncio.sleep(0)
+            await _drain(bot)
             assert bot._is_prayer_playing("g1") is False
         finally:
             pb.INTER_SECTION_PAUSE_SECONDS = orig
     asyncio.run(run())
-
 
 def test_watchdog_noop_during_inter_section_pause():
     async def run():
@@ -268,17 +273,12 @@ def test_watchdog_noop_during_inter_section_pause():
             scheduler = PrayerScheduler(bot.db, AsyncMock(return_value=True), "g1")
             scheduler.is_prayer_playing = bot._is_prayer_playing
             scheduler.is_voice_connected = lambda gid: True
-            # watchdog must see playing=True during gap -> no replay
             assert scheduler.is_prayer_playing("g1") is True
             bot._cancel_session("g1")
-            for t in list(bot._session_tasks.values()):
-                with __import__("contextlib").suppress(Exception):
-                    t.cancel()
-                await asyncio.sleep(0)
+            await _drain(bot)
         finally:
             pb.INTER_SECTION_PAUSE_SECONDS = orig
     asyncio.run(run())
-
 
 def test_exit_during_gap_cancels_runner():
     async def run():
@@ -292,7 +292,6 @@ def test_exit_during_gap_cancels_runner():
             player._playing = False
             await player._on_finish(player, player.current_track)
             await asyncio.sleep(0.05)
-            # simulate /exit during gap
             bot._cancel_session("g1")
             player._playing = False
             await asyncio.sleep(0.5)
@@ -302,18 +301,16 @@ def test_exit_during_gap_cancels_runner():
             pb.INTER_SECTION_PAUSE_SECONDS = orig
     asyncio.run(run())
 
-
 def test_no_track_starts_after_cancel():
     async def run():
         bot = make_bot()
-        player = _prep(bot)
+        _prep(bot)
         await bot._start_prayer_playback("g1", PrayerType.CHRISTIAN, PRAYER_AUDIO_MAP[PrayerType.CHRISTIAN])
         bot._cancel_session("g1")
         for t in list(bot._session_tasks.values()):
             await asyncio.sleep(0)
         assert len(bot.epilogue_calls) == 0
     asyncio.run(run())
-
 
 def test_second_start_cancels_first_session():
     async def run():
@@ -330,21 +327,16 @@ def test_second_start_cancels_first_session():
             assert len(player.starts) == 2  # second session's opener restarted
             assert player.starts[1].local_path.endswith("The three daily prayers - DND community.mp3")
             bot._cancel_session("g1")
-            for t in list(bot._session_tasks.values()):
-                with __import__("contextlib").suppress(Exception):
-                    t.cancel()
-            await asyncio.sleep(0)
+            await _drain(bot)
         finally:
             pb.INTER_SECTION_PAUSE_SECONDS = orig
     asyncio.run(run())
-
 
 def test_missing_opener_falls_back_to_recitation(tmp_path, monkeypatch):
     async def run():
         bot = make_bot()
         player = _prep(bot)
         monkeypatch.chdir(tmp_path)
-        # only recitation exists, opener missing
         import bot.prayer_bot_playback as pb
         monkeypatch.setattr(pb, "MEDIA_DIR", tmp_path)
         (tmp_path / PRAYER_AUDIO_MAP[PrayerType.CHRISTIAN]).write_bytes(b"x")
@@ -355,7 +347,6 @@ def test_missing_opener_falls_back_to_recitation(tmp_path, monkeypatch):
         bot._cancel_session("g1")
     asyncio.run(run())
 
-
 def test_missing_recitation_returns_false(tmp_path, monkeypatch):
     async def run():
         bot = make_bot()
@@ -365,7 +356,6 @@ def test_missing_recitation_returns_false(tmp_path, monkeypatch):
         ok = await bot._start_prayer_playback("g1", PrayerType.CHRISTIAN, PRAYER_AUDIO_MAP[PrayerType.CHRISTIAN])
         assert ok is False
     asyncio.run(run())
-
 
 def test_sessions_are_guild_isolated():
     async def run():
@@ -380,7 +370,6 @@ def test_sessions_are_guild_isolated():
             await bot._start_prayer_playback("g2", PrayerType.JEWISH, PRAYER_AUDIO_MAP[PrayerType.JEWISH])
             assert bot._is_prayer_playing("g1") is True
             assert bot._is_prayer_playing("g2") is True
-            # cancel g1 only (simulate disconnect stopping audio)
             bot._cancel_session("g1")
             p1._playing = False
             await asyncio.sleep(0)
@@ -389,14 +378,10 @@ def test_sessions_are_guild_isolated():
             assert len(p2.starts) == 1
             bot._cancel_session("g2")
             p2._playing = False
-            for t in list(bot._session_tasks.values()):
-                with __import__("contextlib").suppress(Exception):
-                    t.cancel()
-            await asyncio.sleep(0)
+            await _drain(bot)
         finally:
             pb.INTER_SECTION_PAUSE_SECONDS = orig
     asyncio.run(run())
-
 
 def test_runner_advances_when_finish_callback_lost():
     async def run():
@@ -407,22 +392,15 @@ def test_runner_advances_when_finish_callback_lost():
             bot = make_bot()
             player = _prep(bot)
             await bot._start_prayer_playback("g1", PrayerType.CHRISTIAN, PRAYER_AUDIO_MAP[PrayerType.CHRISTIAN])
-            # lose the callback: track ends silently (playing False, no event set)
             player._playing = False
             player.voice_client._playing = False
-            # wait for poll fallback (needs >=2s grace) — speed it by patching start time?
-            # poll grace is 2s; wait 2.6s then runner should advance
             await asyncio.sleep(2.8)
             assert len(player.starts) == 2
             bot._cancel_session("g1")
-            for t in list(bot._session_tasks.values()):
-                with __import__("contextlib").suppress(Exception):
-                    t.cancel()
-            await asyncio.sleep(0)
+            await _drain(bot)
         finally:
             pb.INTER_SECTION_PAUSE_SECONDS = orig_pause
     asyncio.run(run())
-
 
 def test_runner_times_out_loudly():
     async def run():
@@ -432,9 +410,7 @@ def test_runner_times_out_loudly():
         try:
             bot = make_bot()
             player = _prep(bot)
-            # single-track session that never finishes
             await bot._start_prayer_playback("g1", PrayerType.PSALM_91, PRAYER_AUDIO_MAP[PrayerType.PSALM_91])
-            # 1-step has no runner; test the waiter directly with a fake multi state
             bot._session_state["g1"] = {"finished": asyncio.Event(), "gen": bot._session_gen["g1"]}
             player._playing = True  # stays playing forever
             ok = await bot._await_step_finished("g1", bot._session_gen["g1"])
@@ -443,7 +419,6 @@ def test_runner_times_out_loudly():
         finally:
             pb.SESSION_MAX_STEP_SECONDS = orig_max
     asyncio.run(run())
-
 
 def test_runner_does_not_double_advance():
     async def run():
@@ -461,14 +436,10 @@ def test_runner_does_not_double_advance():
             await asyncio.sleep(0.3)
             assert len(player.starts) == 2
             bot._cancel_session("g1")
-            for t in list(bot._session_tasks.values()):
-                with __import__("contextlib").suppress(Exception):
-                    t.cancel()
-            await asyncio.sleep(0)
+            await _drain(bot)
         finally:
             pb.INTER_SECTION_PAUSE_SECONDS = orig
     asyncio.run(run())
-
 
 def test_pause_mid_track_does_not_advance_step():
     async def run():
@@ -481,21 +452,16 @@ def test_pause_mid_track_does_not_advance_step():
             bot = make_bot()
             player = _prep(bot)
             await bot._start_prayer_playback("g1", PrayerType.CHRISTIAN, PRAYER_AUDIO_MAP[PrayerType.CHRISTIAN])
-            # pause: not playing but is_paused -> waiter must not treat as finished
             player._playing = False
             player.state.is_paused = True
             ok = await asyncio.wait_for(bot._await_step_finished("g1", bot._session_gen["g1"]), timeout=4)
             assert ok is False  # timed out, did not advance
             bot._cancel_session("g1")
-            for t in list(bot._session_tasks.values()):
-                with __import__("contextlib").suppress(Exception):
-                    t.cancel()
-            await asyncio.sleep(0)
+            await _drain(bot)
         finally:
             pb.INTER_SECTION_PAUSE_SECONDS = orig_pause
             pb.SESSION_MAX_STEP_SECONDS = orig_max
     asyncio.run(run())
-
 
 def test_volume_change_mid_session_does_not_break_runner():
     async def run():
@@ -506,8 +472,6 @@ def test_volume_change_mid_session_does_not_break_runner():
             bot = make_bot()
             player = _prep(bot)
             await bot._start_prayer_playback("g1", PrayerType.CHRISTIAN, PRAYER_AUDIO_MAP[PrayerType.CHRISTIAN])
-            # volume restart bumps seq and drops after-callback: simulate by keeping
-            # playing True (restarted source) and then finishing normally via event
             player._playing = True
             await asyncio.sleep(0.05)
             player._playing = False
@@ -515,21 +479,16 @@ def test_volume_change_mid_session_does_not_break_runner():
             await asyncio.sleep(0.3)
             assert len(player.starts) == 2
             bot._cancel_session("g1")
-            for t in list(bot._session_tasks.values()):
-                with __import__("contextlib").suppress(Exception):
-                    t.cancel()
-            await asyncio.sleep(0)
+            await _drain(bot)
         finally:
             pb.INTER_SECTION_PAUSE_SECONDS = orig
     asyncio.run(run())
-
 
 def test_single_track_notification_text_unchanged():
     async def run():
         bot = make_bot()
         gid = "12345"
-        player = _prep(bot, gid)
-        # capture notification text via fake text channel
+        _prep(bot, gid)
         sent = []
 
         class FakeChannel:
@@ -542,7 +501,6 @@ def test_single_track_notification_text_unchanged():
                 return FakeChannel()
 
         bot.get_guild = lambda _gid: FakeGuild()  # type: ignore
-        # seed a guild config with text channel so notification posts
         bot.db.execute(
             "INSERT OR REPLACE INTO guild_configs (guild_id, guild_name, enabled, voice_channel_id, text_channel_id) VALUES (?,?,?,?,?)",
             (gid, "G", 1, "111", "222"),
@@ -554,32 +512,25 @@ def test_single_track_notification_text_unchanged():
         bot._cancel_session(gid)
     asyncio.run(run())
 
-
 def test_watchdog_window_covers_two_track_session():
     bot = make_bot()
     plan = session_plan(PrayerType.CHRISTIAN)
     bot._session_steps["g1"] = plan
     secs = bot._session_expected_seconds("g1")
     assert secs is not None and secs > WATCHDOG_MAX_WINDOW_SECONDS
-    # single track uses default window
     bot._session_steps["g1"] = session_plan(PrayerType.PSALM_91)
     assert bot._session_expected_seconds("g1") == WATCHDOG_MAX_WINDOW_SECONDS
 
-
 def test_replay_starts_from_opener():
-    # watchdog replay calls play_prayer(type, filename) which defaults with_opener=True
     plan = session_plan(PrayerType.CHRISTIAN, with_opener=True)
     assert len(plan) == 2
     assert plan[0].filename.endswith("The three daily prayers - DND community.mp3")
 
-
 def test_psalm_91_has_no_opener_on_every_path():
     for with_opener in (True, False):
         assert len(session_plan(PrayerType.PSALM_91, with_opener=with_opener)) == 1
-    # dashboard default True must still give single
-    from dashboard.prayers_routes import adhoc_play  # noqa: import smoke
+    from dashboard.prayers_routes import adhoc_play  # noqa: F401 - import smoke
     assert adhoc_play is not None
-
 
 def test_three_daily_plays_opener_once_runner():
     async def run():
@@ -592,15 +543,12 @@ def test_three_daily_plays_opener_once_runner():
         bot._cancel_session("g1")
     asyncio.run(run())
 
-
 def test_slash_start_opener_passthrough():
-    # /start must accept opener kwarg and forward it; psalm ignores it by construction
     import inspect
     import bot.prayer_bot_status as st
     src = inspect.getsource(st.PrayerBotStatusMixin._setup_slash_commands)
     assert "opener" in src
     assert "with_opener" in src
-
 
 def test_dashboard_play_track_forwards_with_opener():
     async def run():
@@ -622,13 +570,14 @@ def test_dashboard_play_track_forwards_with_opener():
 
         b = CmdBot()
         out = await b._handle_command("play_track", {"guild_id": "g", "track_id": "x.mp3", "prayer_type": "christian", "with_opener": False})
-        assert out == "ok:playing"
+        assert out == "ok:starting"  # Play Now must not block the command queue
+        await asyncio.sleep(0)
         assert seen["opener"] is False
         out2 = await b._handle_command("play_track", {"guild_id": "g", "track_id": "x.mp3", "prayer_type": "christian"})
-        assert out2 == "ok:playing"
+        assert out2 == "ok:starting"
+        await asyncio.sleep(0)
         assert seen["opener"] is True
     asyncio.run(run())
-
 
 def test_no_disconnect_task_between_tracks():
     async def run():
@@ -643,18 +592,13 @@ def test_no_disconnect_task_between_tracks():
             player._playing = False
             await player._on_finish(player, player.current_track)
             await asyncio.sleep(0.3)
-            # runner cancels disconnect before step 2
             assert len(bot.cancel_disconnect_calls) > n_cancel_before
             assert len(bot.epilogue_calls) == 0 or len(player.starts) == 2
             bot._cancel_session("g1")
-            for t in list(bot._session_tasks.values()):
-                with __import__("contextlib").suppress(Exception):
-                    t.cancel()
-            await asyncio.sleep(0)
+            await _drain(bot)
         finally:
             pb.INTER_SECTION_PAUSE_SECONDS = orig
     asyncio.run(run())
-
 
 def test_listen_sessions_stay_open_across_tracks():
     async def run():
@@ -668,18 +612,13 @@ def test_listen_sessions_stay_open_across_tracks():
             player._playing = False
             await player._on_finish(player, player.current_track)
             await asyncio.sleep(0.2)
-            # leaderboard's _session_open uses _is_prayer_playing -> must be True in gap
             assert bot._is_prayer_playing("g1") is True
             assert len(bot.epilogue_calls) == 0  # close_guild_sessions not yet called
             bot._cancel_session("g1")
-            for t in list(bot._session_tasks.values()):
-                with __import__("contextlib").suppress(Exception):
-                    t.cancel()
-            await asyncio.sleep(0)
+            await _drain(bot)
         finally:
             pb.INTER_SECTION_PAUSE_SECONDS = orig
     asyncio.run(run())
-
 
 def test_no_greeting_during_gap():
     async def run():
@@ -696,13 +635,10 @@ def test_no_greeting_during_gap():
         b._tts_queues = {}
         b._session_steps = {"g1": session_plan(PrayerType.CHRISTIAN)}
         b._is_prayer_playing = _is_prayer_playing_impl.__get__(b, TTSBot)  # type: ignore
-        # gap: player silent but session active -> TTS must be suppressed
         assert b._is_prayer_playing("g1") is True
         await b._process_tts("g1", "Welcome X")
-        # no crash, and no TTS started (no _tts_playing entry, no exception)
         assert "g1" not in b._tts_playing
     asyncio.run(run())
-
 
 def test_tts_queue_drained_before_second_track():
     async def run():
@@ -718,14 +654,10 @@ def test_tts_queue_drained_before_second_track():
             await asyncio.sleep(0.3)
             assert "g1" in bot.stop_tts_calls  # drained before step 2
             bot._cancel_session("g1")
-            for t in list(bot._session_tasks.values()):
-                with __import__("contextlib").suppress(Exception):
-                    t.cancel()
-            await asyncio.sleep(0)
+            await _drain(bot)
         finally:
             pb.INTER_SECTION_PAUSE_SECONDS = orig
     asyncio.run(run())
-
 
 def test_stop_greeting_tts_not_called_while_track_playing():
     async def run():
@@ -749,7 +681,6 @@ def test_stop_greeting_tts_not_called_while_track_playing():
         assert vc.is_playing() is True  # not stopped
     asyncio.run(run())
 
-
 def test_play_hooks_install_is_idempotent():
     from bot.prayer_play_hooks import install
     import bot.main as main_mod
@@ -759,3 +690,45 @@ def test_play_hooks_install_is_idempotent():
     install(cls)
     after = (cls._start_prayer_playback, cls._is_prayer_playing)
     assert before == after
+
+def test_prayer_is_held_until_someone_can_hear_it():
+
+    async def run():
+        bot = make_bot()
+        player = _prep(bot)
+        vc = bot.voice_connections["g1"]
+        vc.channel.members.clear()
+        vc._connection.dave_session.users = set()
+
+        task = asyncio.create_task(
+            bot._start_prayer_playback("g1", PrayerType.BUDDHIST, PRAYER_AUDIO_MAP[PrayerType.BUDDHIST])
+        )
+        await asyncio.sleep(0.3)
+        assert player.starts == []
+
+        vc.channel.members.append(SimpleNamespace(id=7, bot=False))
+        vc._connection.dave_session.users = {7}
+        assert await asyncio.wait_for(task, timeout=5) is True
+        assert len(player.starts) == 1
+
+    asyncio.run(run())
+
+def test_prayer_is_skipped_when_nobody_joins():
+    async def run():
+        import bot.prayer_bot_playback as pb
+
+        orig = pb.LISTENER_WAIT_SECONDS
+        pb.LISTENER_WAIT_SECONDS = 0.3
+        try:
+            bot = make_bot()
+            player = _prep(bot)
+            bot.voice_connections["g1"].channel.members.clear()
+            ok = await bot._start_prayer_playback(
+                "g1", PrayerType.BUDDHIST, PRAYER_AUDIO_MAP[PrayerType.BUDDHIST]
+            )
+            assert ok is False
+            assert player.starts == []
+        finally:
+            pb.LISTENER_WAIT_SECONDS = orig
+
+    asyncio.run(run())

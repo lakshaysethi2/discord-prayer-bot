@@ -1,12 +1,9 @@
-"""Tests for `bot/apply_server.py` — copied/reused from `discord-radio` test patterns."""
 
 from __future__ import annotations
 
-import pytest
 from bot.apply_server import apply_server_config
 from db.database import Database
 from db.prayers import apply_guild_config
-
 
 import asyncio
 

@@ -1,18 +1,3 @@
-"""End-to-end encrypted (DAVE) voice readiness for PrayerBot.
-
-Discord now requires the DAVE E2EE protocol for bot voice connections.  With
-discord.py 2.7.1 + davey 0.2.0 the MLS session can sit in ``status=pending``
-(the join commit never arrives), or reach ``active`` without ever being
-``ready``: discord.py ignores the return value of ``DaveSession.process_commit``
-and never calls ``prepare_transition`` / ``execute_transition`` for transition
-id 0.  Either way ``can_encrypt`` stays ``False``, every outgoing frame is sent
-in plaintext, listeners' clients drop them, and the bot is silent while its
-logs still say it is playing.
-
-A brand new voice connection always completes the handshake — that is why
-kicking the bot and letting it rejoin "fixes" it — so when a session does not
-reach a usable state we escalate: force a reconnect and try again.
-"""
 from __future__ import annotations
 
 import asyncio
@@ -24,71 +9,113 @@ log = logging.getLogger(__name__)
 DEFAULT_TIMEOUT = 10.0
 POLL_INTERVAL = 0.5
 DEFAULT_ATTEMPTS = 3
+NO_SESSION_GRACE = 2.0
+GROUP_WAIT = 8.0
 
+def connection(vc: Any) -> Any | None:
+    return getattr(vc, "_connection", None)
 
-def _session_status(session: Any) -> str:
-    return str(getattr(session, "status", ""))
+def session(vc: Any) -> Any | None:
+    conn = connection(vc)
+    return getattr(conn, "dave_session", None) if conn is not None else None
 
+def can_encrypt(vc: Any) -> bool:
+    conn = connection(vc)
+    return bool(conn is not None and getattr(conn, "can_encrypt", False))
 
-def is_dave_session_active(session: Any) -> bool:
-    """True once the MLS group exists and the join commit has been applied."""
-    return _session_status(session).rsplit(".", 1)[-1].lower() == "active"
+def is_dave_session_active(session_: Any) -> bool:
+    return str(getattr(session_, "status", "")).rsplit(".", 1)[-1].lower() == "active"
 
-
-def complete_dave_transition(conn: Any, session: Any) -> None:
-    """Finish the DAVE epoch transition discord.py leaves pending."""
-    protocol_version = getattr(conn, "dave_protocol_version", 1)
+def group_members(vc: Any) -> set[int]:
+    sess = session(vc)
+    if sess is None:
+        return set()
     try:
-        session.prepare_transition(0, protocol_version)
-    except Exception as exc:  # noqa: BLE001 - best effort, never break playback
-        log.debug("DAVE prepare_transition failed: %s", exc)
-        return
-    try:
-        session.execute_transition(0)
-    except Exception as exc:  # noqa: BLE001 - best effort
-        log.debug("DAVE execute_transition failed: %s", exc)
-    try:
-        session.set_passthrough_mode(False)
-    except Exception as exc:  # noqa: BLE001 - best effort
-        log.debug("DAVE set_passthrough_mode failed: %s", exc)
+        return {int(uid) for uid in sess.get_user_ids()}
+    except Exception as exc:  # noqa: BLE001 - a broken session must not raise
+        log.debug("Could not read E2EE group members: %s", exc)
+        return set()
 
+def channel_listeners(vc: Any) -> list[int]:
+    channel = getattr(vc, "channel", None)
+    return [int(m.id) for m in getattr(channel, "members", ()) if not m.bot]
 
-async def _wait_until_ready(vc: Any, timeout: float, poll_interval: float) -> bool:
-    """Poll one connection until it can encrypt."""
+def missing_from_group(vc: Any, member_ids: Any) -> list[int]:
+    wanted = {int(uid) for uid in member_ids}
+    return sorted(wanted - group_members(vc))
+
+def is_audible(vc: Any, member_ids: Any = None) -> bool:
+    if not can_encrypt(vc):
+        return False
+    sess = session(vc)
+    if sess is None or not is_dave_session_active(sess):
+        return False
+    wanted = channel_listeners(vc) if member_ids is None else [int(u) for u in member_ids]
+    return not missing_from_group(vc, wanted)
+
+LISTENER_WAIT_SECONDS = 15 * 60.0
+
+async def wait_for_listener(vc: Any, timeout: float = LISTENER_WAIT_SECONDS, poll_interval: float = 1.0) -> list[int]:
     loop = asyncio.get_running_loop()
     deadline = loop.time() + timeout
-    transition_attempted = False
+    while not (listeners := channel_listeners(vc)):
+        if loop.time() >= deadline:
+            return []
+        await asyncio.sleep(poll_interval)
+    return listeners
 
-    while True:
-        # Read the live state on every pass: discord.py swaps the connection
-        # object when it reconnects on its own.
-        conn = getattr(vc, "_connection", None)
-        if conn is None:
-            return True
-        session = getattr(conn, "dave_session", None)
-        if session is None:
-            # No E2EE negotiated on this connection (older protocol/downgrade).
-            return True
-        if getattr(conn, "can_encrypt", False):
-            log.info(
-                "Voice E2EE ready (privacy code %s)",
-                getattr(session, "voice_privacy_code", None),
-            )
-            return True
-        if not transition_attempted and is_dave_session_active(session):
-            transition_attempted = True
-            complete_dave_transition(conn, session)
-            continue
+async def wait_until_audible(
+    vc: Any,
+    member_ids: Any,
+    timeout: float = GROUP_WAIT,
+    poll_interval: float = 0.25,
+) -> bool:
+    wanted = [int(uid) for uid in member_ids]
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while not is_audible(vc, wanted):
         if loop.time() >= deadline:
             log.warning(
-                "Voice E2EE session not ready after %.1fs (status=%s, epoch=%s)",
+                "Voice cannot reach %s after %.1fs; they may hear nothing",
+                missing_from_group(vc, wanted),
                 timeout,
-                _session_status(session),
-                getattr(session, "epoch", None),
             )
             return False
         await asyncio.sleep(poll_interval)
+    return True
 
+async def _wait_until_encrypting(vc: Any, timeout: float, poll_interval: float) -> bool:
+    loop = asyncio.get_running_loop()
+    started = loop.time()
+    deadline = started + timeout
+    no_session_deadline = min(deadline, started + NO_SESSION_GRACE)
+
+    while True:
+        sess = session(vc)
+        if can_encrypt(vc):
+            log.info(
+                "Voice E2EE ready (privacy code %s, protocol=%s)",
+                getattr(sess, "voice_privacy_code", None),
+                getattr(connection(vc), "dave_protocol_version", None),
+            )
+            return True
+        if sess is None:
+            if loop.time() >= no_session_deadline:
+                log.warning(
+                    "Voice connection has no E2EE session (protocol=%s); a fresh "
+                    "connection is required",
+                    getattr(connection(vc), "dave_protocol_version", 0),
+                )
+                return False
+        elif loop.time() >= deadline:
+            log.warning(
+                "Voice E2EE session not ready after %.1fs (status=%s, epoch=%s)",
+                timeout,
+                getattr(sess, "status", None),
+                getattr(sess, "epoch", None),
+            )
+            return False
+        await asyncio.sleep(poll_interval)
 
 async def ensure_voice_encryption_ready(
     vc: Any,
@@ -98,18 +125,9 @@ async def ensure_voice_encryption_ready(
     reconnect: Any = None,
     attempts: int = DEFAULT_ATTEMPTS,
 ) -> bool:
-    """Make sure outgoing audio will actually be decodable by listeners.
-
-    Returns True when the connection does not use E2EE or is already able to
-    encrypt.  A session stuck in ``pending`` is retried, and — when an async
-    ``reconnect`` callback is supplied — escalated to a fresh voice connection,
-    which is the only reliable way to get Discord to hand out a working MLS
-    group.  Callers keep playing regardless: a possibly silent prayer is still
-    better than an exception mid-service.
-    """
     total = max(1, attempts)
     for attempt in range(1, total + 1):
-        if await _wait_until_ready(vc, timeout, poll_interval):
+        if await _wait_until_encrypting(vc, timeout, poll_interval):
             return True
         if reconnect is None or attempt >= total:
             break

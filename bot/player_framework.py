@@ -1,21 +1,3 @@
-"""FFmpeg-based audio player.
-
-Design:
-
-* `Player` owns the elapsed clock. When a track starts, we record `started_at`
-  (monotonic) and the resume offset (`resume_from`). Elapsed at any moment is
-  `resume_from + (monotonic() - started_at)`.
-* When we pause (channel empty), we compute elapsed, persist it via `BotState`,
-  and stop the audio source (bot stays connected).
-* When we resume, we re-fetch the file via the provider and start a new FFmpeg
-  process with `-ss <resume_from>`.
-* Track finishing (natural end) triggers the `on_finish` callback the caller
-  registered. The callback is what advances the playlist and reposts the
-  "Now Playing" embed.
-
-`discord.FFmpegPCMAudio` and the voice client are injected via the constructor,
-so unit tests can substitute fakes.
-"""
 
 from __future__ import annotations
 
@@ -26,26 +8,25 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 from bot.state_framework import BotState
-from provider.client import FileProviderClient, TrackResponse
+from bot.track import TrackResponse
 
 log = logging.getLogger(__name__)
+VOLUME_MIN = 50
+VOLUME_MAX = 750
 
 FinishCallback = Callable[["Player", TrackResponse], Awaitable[None]]
 
-
 @dataclass(slots=True)
 class ElapsedClock:
-    """Monotonic elapsed-seconds clock. Extracted so it can be unit-tested."""
 
     resume_from: float = 0.0
-    started_at: float | None = None  # monotonic timestamp
+    started_at: float | None = None
 
     def start(self, resume_from: float = 0.0, *, now: float | None = None) -> None:
         self.resume_from = max(0.0, resume_from)
         self.started_at = now if now is not None else time.monotonic()
 
     def stop(self, *, now: float | None = None) -> float:
-        """Freeze the clock. Returns final elapsed seconds."""
         elapsed = self.elapsed(now=now)
         self.resume_from = elapsed
         self.started_at = None
@@ -61,125 +42,70 @@ class ElapsedClock:
         self.resume_from = 0.0
         self.started_at = None
 
-
-# Injected factories so tests can substitute a fake audio source without
-# needing FFmpeg on the machine running the tests.
 FFmpegSourceFactory = Callable[
     [str, float, int], object
-]  # (path, seek_seconds, volume_percent) -> AudioSource
+]
 
-
-# Target loudness for all speech; prayer recordings are mixed far below TTS level.
 LOUDNESS_FILTER = "loudnorm=I=-16:TP=-1.5:LRA=11"
-# Sits after any gain above unity. Normalising already peaks at -1.5 dBFS, so a
-# boosted volume setting would clip immediately (10 % of samples at the 750 %
-# maximum); this keeps the ceiling at -1.0 dBFS instead.
 VOLUME_LIMITER = "alimiter=level=0:limit=0.891"
 
-
 def build_audio_options(seek_seconds: float, volume_percent: int) -> tuple[str, str]:
-    """Return (before_options, options) for FFmpeg.
-
-    Every source is loudness-normalised: the prayer recordings peak around
-    -25 dB, which is inaudible next to TTS, and keeping the chain in one place
-    stops the player and the TTS factory from drifting apart. The volume setting
-    is applied *after* the normaliser (before it, it would be normalised away)
-    and is bounded by a limiter whenever it applies gain, because normalisation
-    leaves almost no headroom.
-    """
     before = ""
     if seek_seconds > 0:
-        # -ss before -i is fast (keyframe) seek; good enough for audio.
         before = f"-ss {seek_seconds:.3f}"
     filters = [LOUDNESS_FILTER]
     if volume_percent != 100:
         filters.append(f"volume={volume_percent / 100:.2f}")
         if volume_percent > 100:
             filters.append(VOLUME_LIMITER)
-    # -vn drops any video stream just in case the source has one.
-    # -loglevel warning keeps the ffmpeg subprocess quiet.
     options = f"-vn -af {','.join(filters)} -loglevel warning"
     return before, options
 
-
 def default_ffmpeg_source(
     path: str, seek_seconds: float, volume_percent: int
-):  # pragma: no cover — requires ffmpeg
-    """Build a discord.FFmpegPCMAudio for `path`, seeking to `seek_seconds`."""
-    import discord  # local import — discord.py is heavy and optional in tests
+):
+    import discord
 
     before, options = build_audio_options(seek_seconds, volume_percent)
     return discord.FFmpegPCMAudio(path, before_options=before, options=options)
 
-
 class Player:
-    """High-level audio playback controller.
-
-    Args:
-        voice_client: A `discord.VoiceClient`-like object. The player calls
-            `.play(source, after=cb)`, `.stop()`, and `.is_playing()`. Injected
-            so tests can pass a fake.
-        provider: HTTP client for fetching the current/next track.
-        state: BotState — the player persists position + track id on transitions.
-        loop: The asyncio loop the discord.py client runs on. Used to schedule
-            the on-finish callback from the FFmpeg thread.
-        source_factory: Builds an audio source from (path, seek_seconds, volume_percent).
-    """
 
     def __init__(
         self,
         *,
         voice_client,
-        provider: FileProviderClient,
         state: BotState,
         loop: asyncio.AbstractEventLoop,
         source_factory: FFmpegSourceFactory = default_ffmpeg_source,
         persist_pause_state: bool = True,
     ) -> None:
         self.voice_client = voice_client
-        self.provider = provider
         self.state = state
         self.loop = loop
         self.source_factory = source_factory
-        # When the bot serves multiple servers, each server owns its own
-        # Player but they share one global playback cursor. In that mode we
-        # must NOT let one server's pause/resume flip the *global* `is_paused`
-        # flag — the orchestrator manages that. Single-server use keeps the
-        # historical behaviour (persist=True).
         self.persist_pause_state = persist_pause_state
         self.clock = ElapsedClock()
         self.current_track: TrackResponse | None = None
         self._on_finish: FinishCallback | None = None
-        # Set while we're intentionally stopping (pause / stop_hard) so the
-        # after-callback doesn't misinterpret it as a natural finish.
         self._suppress_finish = False
-        # Monotonically increasing playback session id. Each `_start_locked`
-        # bumps it and stamps the closure with the new value; when the FFmpeg
-        # `after` callback for an old session fires, we ignore it. This
-        # prevents "double advance" when start() interrupts an existing track.
         self._play_seq = 0
         self._lock = asyncio.Lock()
 
-    # -------------------------------------------------------- registration
     def on_finish(self, cb: FinishCallback) -> None:
         self._on_finish = cb
 
-    # ----------------------------------------------------------- accessors
     def is_playing(self) -> bool:
         return bool(self.voice_client and self.voice_client.is_playing())
 
     def elapsed_seconds(self) -> int:
         return int(self.clock.elapsed())
 
-    # ----------------------------------------------------------- lifecycle
     async def start(self, track: TrackResponse, *, seek_seconds: float = 0.0) -> None:
-        """Begin playback of `track` from `seek_seconds`."""
         async with self._lock:
             await self._start_locked(track, seek_seconds=seek_seconds)
 
     async def _start_locked(self, track: TrackResponse, *, seek_seconds: float) -> None:
-        # Stop any previous playback. We DON'T need to set _suppress_finish
-        # here — the seq check below discards the old callback safely.
         if self.voice_client.is_playing():
             self.voice_client.stop()
         self._suppress_finish = False
@@ -199,9 +125,6 @@ class Player:
             self.state.playback_position_seconds = int(seek_seconds)
             self.state.is_paused = False
 
-        # `after` runs on FFmpeg's cleanup thread — schedule the callback back
-        # onto the main asyncio loop. The captured `my_seq` lets us discard
-        # after-callbacks from previously-superseded sources.
         def _after_bound(exc: BaseException | None, _seq: int = my_seq) -> None:
             self._after(exc, expected_seq=_seq)
 
@@ -211,8 +134,6 @@ class Player:
         if exc is not None:
             log.warning("ffmpeg after-callback error: %s", exc)
         if expected_seq is not None and expected_seq != self._play_seq:
-            # This callback belongs to a superseded playback session — either
-            # we started a new track already, or we paused/stopped. Discard.
             log.debug(
                 "ignoring after-callback for stale seq %s (current %s)",
                 expected_seq,
@@ -225,23 +146,17 @@ class Player:
         track = self.current_track
         if cb is None or track is None:
             return
-        # Bail out cleanly if the loop is closed (shutdown mid-track). Building
-        # the coroutine only after the check means we don't leak an
-        # unawaited coroutine.
         if self.loop.is_closed():
             return
         coro = cb(self, track)
         try:
             asyncio.run_coroutine_threadsafe(coro, self.loop)
-        except RuntimeError as err:  # pragma: no cover — loop closed between check & schedule
+        except RuntimeError as err:
             log.warning("could not schedule on_finish: %s", err)
             coro.close()
 
     async def pause(self) -> None:
-        """Stop audio, keep the position for later resume."""
         async with self._lock:
-            # Bump the seq so the after-callback from ffmpeg's stop is
-            # discarded — belt-and-braces on top of _suppress_finish.
             self._play_seq += 1
             self._suppress_finish = True
             if self.voice_client.is_playing():
@@ -252,49 +167,37 @@ class Player:
                 self.state.is_paused = True
 
     async def resume(self) -> None:
-        """Resume playback of the current track at the saved position."""
         async with self._lock:
             track_id = self.state.current_track_id
             if not track_id:
                 return
             resume_at = float(self.state.playback_position_seconds)
-            
-            # If we have the track in memory (common for prayer bot), use it
+
             track = self.current_track
-            
-            # If not in memory and we have a provider, fetch it
-            if (track is None or track.track_id != track_id) and self.provider:
-                track = await self.provider.get_by_id(track_id)
-            
+
             if track is None or not track.ready or not track.local_path:
-                log.warning("resume: track %s not ready or no provider available", track_id)
+                log.warning("resume: track %s is not ready", track_id)
                 return
-                
+
             await self._start_locked(track, seek_seconds=resume_at)
             if self.persist_pause_state:
                 self.state.is_paused = False
 
     async def set_volume(self, volume_percent: int) -> int:
-        """Persist global gain and restart the active source at its exact position."""
-        volume = min(750, max(50, int(volume_percent)))
+        volume = min(VOLUME_MAX, max(VOLUME_MIN, int(volume_percent)))
         async with self._lock:
             self.state.stream_volume_percent = volume
-            # If we are currently playing, restart the source to apply volume
             if self.current_track is not None and self.is_playing():
                 position = self.clock.stop()
                 await self._start_locked(self.current_track, seek_seconds=position)
         return volume
 
     async def skip(self) -> None:
-        """Force-finish the current track and advance."""
         async with self._lock:
             if self.voice_client.is_playing():
-                # Do NOT suppress finish: we want the on_finish callback to
-                # fire so the playlist advances naturally.
                 self.voice_client.stop()
 
     async def stop_hard(self) -> None:
-        """Stop audio, do not advance, do not persist position (used on shutdown)."""
         async with self._lock:
             self._play_seq += 1
             self._suppress_finish = True

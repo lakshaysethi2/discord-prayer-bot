@@ -1,23 +1,3 @@
-"""Health/freshness helpers shared by the dashboard `/health` endpoint.
-
-The endpoint returns:
-{
-  "status": "healthy" | "degraded" | "unhealthy",
-  "database": "connected" | "disconnected",
-  "git_sha": "0f9d80d844024da2c0e77b778302cc8e8160504b" | "unknown",
-  "git_sha_short": "0f9d80d",
-  "last_prayer_played_utc": "2026-07-31 07:00:05" | null,
-  "hours_since_last_prayer": 7.4,
-  "expected_max_gap_hours": 32.0,
-  "stale": false
-}
-
-`stale` is true when no successful prayer has played for longer than the
-longest gap in the *enabled* schedule (plus a 1h buffer).
-
-`git_sha` comes from GIT_SHA / SOURCE_VERSION / GITHUB_SHA, else `git rev-parse HEAD`.
-Containers must bake GIT_SHA at build time (see Dockerfile + docker-compose).
-"""
 
 from __future__ import annotations
 
@@ -30,17 +10,14 @@ from db.database import Database
 _STALE_BUFFER_HOURS = 1.0
 _SHA_ENV_KEYS = ("GIT_SHA", "SOURCE_VERSION", "GITHUB_SHA")
 
-
 def _now_utc() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
-
 
 def _parse_db_ts(value: str) -> datetime | None:
     try:
         return datetime.strptime(value, "%Y-%m-%d %H:%M:%S")
     except (TypeError, ValueError):
         return None
-
 
 def running_git_sha() -> str:
     for key in _SHA_ENV_KEYS:
@@ -60,12 +37,10 @@ def running_git_sha() -> str:
         pass
     return "unknown"
 
-
 def git_identity() -> dict[str, str]:
     sha = running_git_sha()
     short = sha[:7] if sha != "unknown" else "unknown"
     return {"git_sha": sha, "git_sha_short": short}
-
 
 def max_schedule_gap_hours(db: Database) -> float | None:
     rows = db.fetchall(
@@ -95,7 +70,6 @@ def max_schedule_gap_hours(db: Database) -> float | None:
             gap = 7 * 1440
         gaps.append(gap)
     return max(gaps) / 60.0
-
 
 def compute_health(db: Database) -> dict:
     row = db.fetchone(

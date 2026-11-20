@@ -2,34 +2,28 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import pytz
-from datetime import datetime, time, timedelta, timezone
-from typing import Callable, Awaitable
+from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime, timedelta
 
+import pytz
+
+from bot.prayer_time import next_occurrence, scheduled_utc, zone_for
 from db.database import Database
-from db.prayers import get_weekly_schedule, get_audio_filename, get_guild_config
 from db.models import PrayerType
+from db.prayers import get_audio_filename, get_guild_config, get_weekly_schedule, log_prayer_played
 
 log = logging.getLogger(__name__)
 
-WATCHDOG_MAX_WINDOW_SECONDS = 600  # 10 minutes
-WATCHDOG_MAX_RETRIES = 1  # Max retry attempts per active prayer window
-PLAY_GRACE_MINUTES = 10  # retry scheduled start this long after T=0
-
+WATCHDOG_MAX_WINDOW_SECONDS = 600
+WATCHDOG_MAX_RETRIES = 1
+PLAY_GRACE_MINUTES = 10
 
 def _as_utc(dt: datetime) -> datetime:
-    """Ensure datetime is timezone-aware and converted to UTC."""
     if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc)
-
+        return dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC)
 
 class PrayerScheduler:
-    """Checks every 30 seconds for prayers that should play now or soon.
-
-    - Calls on_pre_prayer(guild_id) X min before scheduled prayer time.
-    - Calls play_prayer(guild_id, prayer_type, filename) at exact prayer time.
-    """
 
     def __init__(
         self,
@@ -45,6 +39,8 @@ class PrayerScheduler:
         self._pre_joined: set[str] = set()
         self._played: set[str] = set()
         self._active_prayers: dict[str, datetime] = {}
+        self._in_flight: set[str] = set()
+        self._tasks: set[asyncio.Task] = set()
         self._watchdog_retries: dict[str, int] = {}
         self.is_voice_connected: Callable[[str], bool] | None = None
         self.is_prayer_playing: Callable[[str], bool] | None = None
@@ -58,22 +54,13 @@ class PrayerScheduler:
 
     def in_pre_join_window(self, now: datetime | None = None) -> bool:
         now = now or datetime.now(self.timezone)
-        weekday = now.weekday()
         cfg = get_guild_config(self.db, self.guild_id)
         pre_join_mins = cfg.pre_join_minutes if cfg else 10
-        for sched in get_weekly_schedule(self.db, self.guild_id):
-            if not sched.enabled:
-                continue
-            days_ahead = (sched.day_of_week - weekday) % 7
-            prayer_dt = now.replace(
-                hour=sched.time_utc.hour,
-                minute=sched.time_utc.minute,
-                second=0,
-                microsecond=0,
-            ) + timedelta(days=days_ahead)
-            if now < prayer_dt <= (now + timedelta(minutes=pre_join_mins)):
-                return True
-        return False
+        upcoming = next_occurrence(get_weekly_schedule(self.db, self.guild_id), cfg, now)
+        if upcoming is None:
+            return False
+        _, when = upcoming
+        return now < when <= now + timedelta(minutes=pre_join_mins)
 
     async def start(self) -> None:
         if self._running:
@@ -101,30 +88,30 @@ class PrayerScheduler:
 
     async def _check_and_play(self) -> None:
         now = datetime.now(self.timezone)
-        weekday = now.weekday()
-        current_time = now.time().replace(second=0, microsecond=0)
-        today_str = now.date().isoformat()
+        if now.tzinfo is None:
+            now = now.replace(tzinfo=UTC)
+        cfg = get_guild_config(self.db, self.guild_id)
+        zone = zone_for(cfg.timezone_name if cfg else None)
+        local_today = (now.astimezone(zone) if zone else now).date()
+        weekday = local_today.weekday()
+        today_str = local_today.isoformat()
 
         self._pre_joined = {k for k in self._pre_joined if k.split(":")[0] >= today_str}
         self._played = {k for k in self._played if k.startswith(today_str)}
 
-        cfg = get_guild_config(self.db, self.guild_id)
         pre_join_mins = cfg.pre_join_minutes if cfg else 10
-        schedules = get_weekly_schedule(self.db, self.guild_id)
 
-        for sched in schedules:
+        for sched in get_weekly_schedule(self.db, self.guild_id):
             if not sched.enabled:
                 continue
 
             days_ahead = (sched.day_of_week - weekday) % 7
-            prayer_dt = now.replace(
-                hour=sched.time_utc.hour,
-                minute=sched.time_utc.minute,
-                second=0,
-                microsecond=0
-            ) + timedelta(days=days_ahead)
+            prayer_dt = scheduled_utc(sched, cfg, local_today + timedelta(days=days_ahead))
 
-            pre_key = f"{prayer_dt.date().isoformat()}:{sched.day_of_week}:{sched.prayer_type.value}:{sched.time_utc}"
+            pre_key = (
+                f"{prayer_dt.date().isoformat()}:{sched.day_of_week}"
+                f":{sched.prayer_type.value}:{sched.time_utc}"
+            )
             play_key = f"{today_str}:{sched.day_of_week}:{sched.prayer_type.value}:{sched.time_utc}"
 
             if (self.on_pre_prayer
@@ -146,31 +133,36 @@ class PrayerScheduler:
                 except Exception as exc:
                     log.exception("Pre-join failed: %s", exc)
 
-            sched_mins = sched.time_utc.hour * 60 + sched.time_utc.minute
-            curr_mins = current_time.hour * 60 + current_time.minute
-            time_diff = (curr_mins - sched_mins) % 1440
+            due = prayer_dt <= now < prayer_dt + timedelta(minutes=PLAY_GRACE_MINUTES)
+            if due and play_key not in self._played and play_key not in self._in_flight:
+                self._in_flight.add(play_key)
+                task = asyncio.create_task(self._play_slot(sched, play_key, pre_key))
+                self._tasks.add(task)
+                task.add_done_callback(self._tasks.discard)
 
-            if sched.day_of_week == weekday and 0 <= time_diff <= PLAY_GRACE_MINUTES and play_key not in self._played:
-                filename = get_audio_filename(sched.prayer_type)
-                success = await self.play_prayer(
-                    self.guild_id, sched.prayer_type, filename
+    async def _play_slot(self, sched, play_key: str, pre_key: str) -> None:
+        try:
+            filename = get_audio_filename(sched.prayer_type)
+            success = await self.play_prayer(self.guild_id, sched.prayer_type, filename)
+            log_prayer_played(self.db, self.guild_id, sched.id, sched.prayer_type, success)
+            if success:
+                self._played.add(play_key)
+                self._active_prayers[pre_key] = _as_utc(datetime.now(self.timezone))
+                log.info("Played %s for guild %s", sched.prayer_type, self.guild_id)
+            else:
+                log.warning(
+                    "Play failed for %s in guild %s; leaving slot due for retry",
+                    sched.prayer_type, self.guild_id,
                 )
-                from db.prayers import log_prayer_played
-                log_prayer_played(
-                    self.db, self.guild_id, sched.id, sched.prayer_type, success
-                )
-                self._active_prayers[pre_key] = _as_utc(now)
-                if success:
-                    self._played.add(play_key)
-                    log.info("Played %s for guild %s", sched.prayer_type, self.guild_id)
-                else:
-                    log.warning(
-                        "Play failed for %s in guild %s; leaving slot due for retry",
-                        sched.prayer_type, self.guild_id,
-                    )
+        except Exception as exc:
+            log.exception(
+                "Play failed for %s in guild %s: %s", sched.prayer_type, self.guild_id, exc
+            )
+        finally:
+            self._in_flight.discard(play_key)
 
     async def _watchdog_check(self) -> None:
-        now_utc = datetime.now(timezone.utc)
+        now_utc = datetime.now(UTC)
         expired_keys = []
         window_seconds = WATCHDOG_MAX_WINDOW_SECONDS
         if self.session_expected_seconds is not None:
@@ -197,12 +189,13 @@ class PrayerScheduler:
 
             needs_replay = (not connected) or (not playing)
             if not needs_replay:
+                self._watchdog_retries.pop(prayer_key, None)
                 continue
 
             retries = self._watchdog_retries.get(prayer_key, 0)
             if retries >= WATCHDOG_MAX_RETRIES:
                 log.warning(
-                    "Watchdog: max retries (%d) reached for %s in guild %s; skipping further retries",
+                    "Watchdog: max retries (%d) reached for %s in guild %s; skipping",
                     WATCHDOG_MAX_RETRIES, prayer_key, self.guild_id,
                 )
                 continue
