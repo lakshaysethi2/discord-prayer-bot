@@ -26,6 +26,7 @@ from db.daily_draw import (
     get_active_message,
     get_or_seed_config,
     last_draw_at,
+    last_drawee_id,
     repoint_active_message,
     set_channel_id,
     set_cooldown_hours,
@@ -170,6 +171,20 @@ def test_repoint_preserves_hearts_and_date(db):
 # ---------------------------------------------------------------------------
 # Cooldowns
 # ---------------------------------------------------------------------------
+
+def test_last_drawee_roundtrip_and_default_none(db):
+    assert last_drawee_id(db, GID, "u1") is None
+
+    now = datetime(2026, 7, 20, 5, 0, 0)
+    set_last_draw(db, GID, "u1", now, "999")
+    assert last_drawee_id(db, GID, "u1") == "999"
+
+    # The next draw overwrites the reminder target.
+    set_last_draw(db, GID, "u1", now + timedelta(hours=19), "777")
+    assert last_drawee_id(db, GID, "u1") == "777"
+
+    set_last_draw(db, GID, "u2", now)
+    assert last_drawee_id(db, GID, "u2") is None
 
 def test_last_draw_roundtrip_naive_utc(db):
     assert last_draw_at(db, GID, "u1") is None

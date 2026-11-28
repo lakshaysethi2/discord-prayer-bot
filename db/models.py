@@ -177,6 +177,7 @@ SCHEMA: tuple[str, ...] = (
         guild_id   TEXT NOT NULL,
         user_id    TEXT NOT NULL,
         last_draw_at DATETIME NOT NULL,
+        last_drawee_id TEXT,
         PRIMARY KEY (guild_id, user_id)
     )
     """,

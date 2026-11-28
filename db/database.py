@@ -103,6 +103,7 @@ class Database:
                     cur, "daily_draw_state", "archive_button_removed", "INTEGER DEFAULT 0"
                 )
                 self._ensure_column(cur, "prayer_schedules", "time_utc", "TEXT")
+                self._ensure_column(cur, "daily_draw_cooldowns", "last_drawee_id", "TEXT")
                 existing_cols = {row["name"] for row in cur.execute("PRAGMA table_info(prayer_schedules)").fetchall()}
                 if "time" in existing_cols and "time_utc" in existing_cols:
                     cur.execute("UPDATE prayer_schedules SET time_utc = time WHERE time_utc IS NULL OR time_utc = ''")
