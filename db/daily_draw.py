@@ -285,14 +285,31 @@ def last_draw_at(db: Database, guild_id: str, user_id: str) -> datetime | None:
         return None
 
 
-def set_last_draw(db: Database, guild_id: str, user_id: str, utc_dt: datetime) -> None:
+def last_drawee_id(db: Database, guild_id: str, user_id: str) -> str | None:
+    row = db.fetchone(
+        "SELECT last_drawee_id FROM daily_draw_cooldowns WHERE guild_id = ? AND user_id = ?",
+        (guild_id, user_id),
+    )
+    return (row["last_drawee_id"] if row else None) or None
+
+
+def set_last_draw(
+    db: Database, guild_id: str, user_id: str, utc_dt: datetime, drawee_id=None
+) -> None:
     db.execute(
         """
-        INSERT INTO daily_draw_cooldowns (guild_id, user_id, last_draw_at)
-        VALUES (?, ?, ?)
-        ON CONFLICT(guild_id, user_id) DO UPDATE SET last_draw_at = excluded.last_draw_at
+        INSERT INTO daily_draw_cooldowns (guild_id, user_id, last_draw_at, last_drawee_id)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(guild_id, user_id) DO UPDATE SET
+            last_draw_at = excluded.last_draw_at,
+            last_drawee_id = excluded.last_drawee_id
         """,
-        (guild_id, user_id, _to_naive_utc(utc_dt).isoformat()),
+        (
+            guild_id,
+            user_id,
+            _to_naive_utc(utc_dt).isoformat(),
+            str(drawee_id) if drawee_id is not None else None,
+        ),
     )
 
 

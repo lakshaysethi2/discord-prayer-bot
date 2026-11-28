@@ -399,7 +399,9 @@ class DailyDrawV2Mixin:
                     )
                 return
 
-            daily_draw_db.set_last_draw(self.db, guild_id, str(interaction.user.id), now_utc)
+            daily_draw_db.set_last_draw(
+                self.db, guild_id, str(interaction.user.id), now_utc, drawee_id
+            )
             daily_draw_db.update_hearts(self.db, guild_id, new_count)
             with contextlib.suppress(Exception):
                 await self._edit_daily_draw_message(guild, cfg, message_id, cycle_date, new_count)
@@ -410,17 +412,23 @@ class DailyDrawV2Mixin:
 
     async def _send_daily_draw_cooldown_reply(self, interaction, cfg, last_draw=None, now_utc=None):
         """catpray custom emoji first; on send failure degrade to folded-hands."""
+        from db import daily_draw as daily_draw_db
+
         if now_utc is None:
             now_utc = datetime.now(pytz.utc)
         remaining = cooldown_remaining(last_draw, now_utc, cfg.cooldown_hours)
-        text = format_cooldown_reply(cfg.emoji_catpray, remaining)
+        drawee_id = daily_draw_db.last_drawee_id(
+            self.db, str(interaction.guild_id), str(interaction.user.id)
+        )
+        reminder = f"\nYour lucky draw today is <@{drawee_id}>!" if drawee_id else ""
+        text = format_cooldown_reply(cfg.emoji_catpray, remaining) + reminder
         try:
             await interaction.followup.send(text, ephemeral=True)
         except Exception:
             log.warning("Daily draw: catpray emoji send failed — falling back to 🙏")
             with contextlib.suppress(Exception):
                 await interaction.followup.send(
-                    format_cooldown_reply("🙏", remaining), ephemeral=True
+                    format_cooldown_reply("🙏", remaining) + reminder, ephemeral=True
                 )
 
     async def _edit_daily_draw_message(self, guild, cfg, message_id, cycle_date, heart_count):
